@@ -128,7 +128,16 @@
                     <span class="tooltiptext">Значимость пиков</span>
                 </div>
             </div>
-
+            <div class="parameter-section">
+                <h4>Отображение таблицы пиков</h4>
+                <div class="tooltip">
+                    <label>
+                        <input type="checkbox" id="show_peak_table" title="Отобразить таблицу пиков">
+                        <span class="tooltiptext">Отобразить таблицу с координатами пиков.</span>
+                        Таблица пиков
+                    </label>
+                </div>
+            </div>
 
 
                 <div class="parameter-section">
@@ -151,10 +160,16 @@
             </div>
 
             <div id="upload_status"></div>
+            <button onclick="downloadMeanSpectrum()" title="Скачать средний спектр">Скачать средний спектр</button>
+
         </div>
         <div class="plot-area">
             <div id="spectrum_plot"></div>
         </div>
+    </div>
+    <div class="plot-area">
+        <div id="spectrum_plot"></div>
+        <div id="peak_table_container"></div> <!-- Таблица пиков -->
     </div>
     <button id="theme-toggle" title="Переключить тему оформления">Переключить тему</button>
 </body>

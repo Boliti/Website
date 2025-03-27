@@ -109,6 +109,15 @@ async function processAndPlot() {
             result.boxplot_stats || [],
             "Обработанные спектры"
         );
+        window.latestMeanAmplitude = result.mean_amplitude;
+        // Проверяем, отмечена ли галочка отображения таблицы
+        const showPeakTable = document.getElementById('show_peak_table').checked;
+
+        if (showPeakTable && result.peaks && result.peaks.length > 0) {
+            renderPeakTable(result.frequencies, result.processed_amplitudes, result.peaks, fileNames);
+        } else {
+            document.getElementById('peak_table_container').innerHTML = '';
+        }
 
     } catch (error) {
         console.error("Ошибка:", error);
@@ -122,34 +131,44 @@ function plotCombinedSpectrum(allFrequencies, allAmplitudes, fileNames, allPeaks
     const lineColors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b'];
 
     // Линейные графики для каждого файла
-    if (!showOnlyMeanStd) {
-        for (let i = 0; i < allFrequencies.length; i++) {
+if (!showOnlyMeanStd) {
+    for (let i = 0; i < allFrequencies.length; i++) {
+        plotData.push({
+            x: allFrequencies[i],
+            y: allAmplitudes[i],
+            type: 'scatter',
+            mode: 'lines',
+            name: truncateFileName(fileNames[i]) || `Файл ${i + 1}`,
+            line: { 
+                color: lineColors[i % lineColors.length],
+                width: 1
+            },
+            yaxis: 'y1'
+        });
+    
+        if (allPeaks[i] && allPeaks[i].length > 0) {
+            // Точки пиков
+            const peakX = allPeaks[i].map(index => allFrequencies[i][index]);
+            const peakY = allPeaks[i].map(index => allAmplitudes[i][index]);
+
             plotData.push({
-                x: allFrequencies[i],
-                y: allAmplitudes[i],
+                x: peakX,
+                y: peakY,
                 type: 'scatter',
-                mode: 'lines',
-                name: truncateFileName(fileNames[i]) || `Файл ${i + 1}`,
-                line: { 
-                    color: lineColors[i % lineColors.length],
-                    width: 1
+                mode: 'markers+text',
+                name: `Пики ${truncateFileName(fileNames[i]) || `Файл ${i + 1}`}`,
+                marker: { color: lineColors[i % lineColors.length], size: 8, symbol: 'circle-open' },
+                text: peakX.map(coord => coord.toFixed(2)), // подписи координат X с округлением до 2 знаков
+                textposition: 'top center',
+                textfont: {
+                    size: 10,
+                    color: lineColors[i % lineColors.length]
                 },
                 yaxis: 'y1'
             });
-        
-            if (allPeaks[i] && allPeaks[i].length > 0) {
-                plotData.push({
-                    x: allPeaks[i].map(index => allFrequencies[i][index]),
-                    y: allPeaks[i].map(index => allAmplitudes[i][index]),
-                    type: 'scatter',
-                    mode: 'markers',
-                    name: `Пики ${truncateFileName(fileNames[i]) || `Файл ${i + 1}`}`,
-                    marker: { color: lineColors[i % lineColors.length], size: 8, symbol: 'circle-open' },
-                    yaxis: 'y1'
-                });
-            }
         }
     }
+}
 
     // Среднее значение и стандартное отклонение
     if (mean_amplitude && mean_amplitude.length > 0 && std_amplitude && std_amplitude.length > 0) {
@@ -231,6 +250,44 @@ function plotCombinedSpectrum(allFrequencies, allAmplitudes, fileNames, allPeaks
     Plotly.newPlot('spectrum_plot', plotData, layout);
 }
 
+function renderPeakTable(allFrequencies, allAmplitudes, allPeaks, fileNames) {
+    const container = document.getElementById('peak_table_container');
+    container.innerHTML = ''; // Очистка предыдущего содержимого
+
+    const table = document.createElement('table');
+    table.style.width = '100%';
+    table.style.borderCollapse = 'collapse';
+    table.innerHTML = `
+        <thead>
+            <tr>
+                <th style="border: 1px solid #ccc; padding: 8px;">Файл</th>
+                <th style="border: 1px solid #ccc; padding: 8px;">№ пика</th>
+                <th style="border: 1px solid #ccc; padding: 8px;">Частота (см⁻¹)</th>
+                <th style="border: 1px solid #ccc; padding: 8px;">Интенсивность</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    `;
+
+    const tbody = table.querySelector('tbody');
+
+    allPeaks.forEach((peaks, fileIndex) => {
+        peaks.forEach((peakIndex, idx) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td style="border: 1px solid #ccc; padding: 6px;">${fileNames[fileIndex]}</td>
+                <td style="border: 1px solid #ccc; padding: 6px;">${idx + 1}</td>
+                <td style="border: 1px solid #ccc; padding: 6px;">${allFrequencies[fileIndex][peakIndex].toFixed(2)}</td>
+                <td style="border: 1px solid #ccc; padding: 6px;">${allAmplitudes[fileIndex][peakIndex].toFixed(2)}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    });
+
+    container.appendChild(table);
+}
+
+
 function updatePlotTheme() {
     const plotElement = document.getElementById('spectrum_plot');
     if (!plotElement || !plotElement.data) return;
@@ -268,6 +325,63 @@ function updatePlotTheme() {
 function truncateFileName(name, length = 20) {
     return name.length > length ? name.slice(0, length - 3) + '...' : name;
 }
+
+async function downloadMeanSpectrum() {
+    if (!allFrequencies.length || !window.latestMeanAmplitude) {
+        alert("Сначала загрузите и обработайте данные.");
+        return;
+    }
+
+    // Сбор метаданных из формы
+    const params = {
+        remove_baseline: document.getElementById('remove_baseline').checked,
+        lam: document.getElementById('lam').value || "1000",
+        p: document.getElementById('p').value || "0.001",
+        apply_smoothing: document.getElementById('apply_smoothing').checked,
+        window_length: document.getElementById('window_length').value || "25",
+        polyorder: document.getElementById('polyorder').value || "2",
+        normalize: document.getElementById('normalize').checked,
+        find_peaks: document.getElementById('find_peaks').checked,
+        peak_width: document.getElementById('peak_width').value || "1",
+        peak_prominence: document.getElementById('peak_prominence').value || "1",
+        calculate_mean_std: document.getElementById('calculate_mean_std').checked,
+        calculate_boxplot: document.getElementById('calculate_boxplot').checked,
+        min_freq: document.getElementById('min_freq').value || "0",
+        max_freq: document.getElementById('max_freq').value || "10000"
+    };
+
+    try {
+        const exportParams = {
+            frequencies: allFrequencies[0],
+            mean_amplitude: window.latestMeanAmplitude,
+            params: params // Передача метаданных на сервер
+        };
+
+        const response = await fetch('/export_mean_spectrum', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(exportParams),
+        });
+
+        if (!response.ok) throw new Error('Ошибка экспорта');
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'mean_spectrum.csv';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+    } catch (error) {
+        console.error("Ошибка экспорта:", error);
+        alert("Ошибка экспорта: " + error.message);
+    }
+}
+
+
+
 
 document.addEventListener('DOMContentLoaded', function() {
     const themeToggle = document.getElementById('theme-toggle');

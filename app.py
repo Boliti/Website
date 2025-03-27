@@ -61,8 +61,12 @@ def upload_files():
                 try:
                     lines = content.splitlines()
                     for line in lines:
+                        if line.startswith("#"):
+                            continue
                         if ',' in line:
                             parts = line.split(',')
+                        elif ';' in line:
+                            parts = line.split(';')
                         else:
                             parts = line.split()  # На случай разделения пробелами
                         if len(parts) == 2:
@@ -170,6 +174,37 @@ def process_data():
     except Exception as e:
         print(f"Ошибка обработки данных: {str(e)}")
         return jsonify({'error': f"Ошибка обработки данных: {str(e)}"}), 400
+
+
+@app.route('/export_mean_spectrum', methods=['POST'])
+def export_mean_spectrum():
+    try:
+        data = request.json
+        frequencies = np.array(data['frequencies'])
+        mean_amplitude = np.array(data['mean_amplitude'])
+        params = data.get('params', {})
+
+        # Создаем CSV-строку с метаданными
+        metadata_lines = ["# Metadata"]
+        for param, value in params.items():
+            metadata_lines.append(f"# {param}: {value}")
+        metadata_str = "; ".join(metadata_lines)
+
+        csv_data = f"{metadata_str}\n#frequency,mean_amplitude\n"
+        csv_data += "\n".join([f"{freq},{amp}" for freq, amp in zip(frequencies, mean_amplitude)])
+
+        response = app.response_class(
+            csv_data,
+            mimetype='text/csv',
+            headers={
+                'Content-Disposition': 'attachment; filename=mean_spectrum.csv'
+            }
+        )
+        return response
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
 
 
 if __name__ == '__main__':
