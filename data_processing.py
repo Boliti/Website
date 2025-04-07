@@ -219,3 +219,14 @@ def calculate_boxplot_stats(amplitudes_list):
         })
     
     return boxplot_stats
+
+def format_spectral_data(frequencies, amplitudes):
+    """Форматирует спектральные данные для сохранения"""
+    if len(frequencies) != len(amplitudes):
+        raise ValueError("Длины массивов частот и амплитуд не совпадают")
+    
+    lines = []
+    for freq, ampl in zip(frequencies, amplitudes):
+        lines.append(f"{freq:.2f}\t{ampl:.6f}")
+    
+    return "\n".join(lines)

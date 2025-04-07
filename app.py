@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, send_file
 import numpy as np
 from data_processing import (
     baseline_als,
@@ -175,6 +175,64 @@ def process_data():
         print(f"Ошибка обработки данных: {str(e)}")
         return jsonify({'error': f"Ошибка обработки данных: {str(e)}"}), 400
 
+import zipfile
+import io
+from datetime import datetime
+
+@app.route('/export_processed_data', methods=['POST'])
+def export_processed_data():
+    try:
+        data = request.json
+        frequencies = data['frequencies']
+        amplitudes = data['amplitudes']  # Это уже обработанные амплитуды
+        file_names = data['fileNames']
+        params = data['params']
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for i, (freq, ampl, name) in enumerate(zip(frequencies, amplitudes, file_names)):
+                base_name = f"spectrum_{i+1}" if not name else name.split('.')[0]
+                file_name = f"{base_name}_processed.txt"
+                
+                content = "# Processed spectral data (after transformations)\n"
+                content += f"# Original file: {name}\n"
+                content += "# Processing parameters:\n"
+                for param, value in params.items():
+                    content += f"# {param}: {value}\n"
+                content += "# Wavenumber (cm⁻¹)\tIntensity (a.u.)\n"
+                
+                for wavenumber, intensity in zip(freq, ampl):
+                    content += f"{wavenumber}\t{intensity}\n"
+                
+                zip_file.writestr(file_name, content)
+            
+            # Файл с метаданными
+            meta_content = "# Processing metadata\n"
+            meta_content += f"# Export date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            meta_content += "# Applied transformations:\n"
+            if params.get('remove_baseline'):
+                meta_content += "# - Baseline removal applied\n"
+            if params.get('apply_smoothing'):
+                meta_content += "# - Smoothing applied\n"
+            if params.get('normalize'):
+                meta_content += "# - Normalization applied\n"
+            meta_content += "# Parameters:\n"
+            for param, value in params.items():
+                meta_content += f"# {param}: {value}\n"
+            
+            zip_file.writestr("processing_metadata.txt", meta_content)
+
+        zip_buffer.seek(0)
+        return send_file(
+            zip_buffer,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name='processed_spectra.zip'
+        )
+
+    except Exception as e:
+        print(f"Ошибка экспорта: {str(e)}")
+        return jsonify({'error': f"Ошибка экспорта: {str(e)}"}), 500
 
 @app.route('/export_mean_spectrum', methods=['POST'])
 def export_mean_spectrum():
