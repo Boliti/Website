@@ -35,6 +35,66 @@ def calculate_boxplot_stats(amplitudes_list):
     
     return boxplot_stats
 
+
+def parse_txt_file(content):
+    """
+    Парсит данные из .txt файла.
+    Поддерживает разделение пробелами, табуляцией или запятыми для дробных чисел.
+    """
+    frequencies = []
+    amplitudes = []
+
+    lines = content.splitlines()
+    for line in lines:
+        if line.startswith("#"):
+            continue
+        line = line.replace(',', '.')  # замена запятых на точки для дробных чисел
+        parts = line.strip().split()
+        if len(parts) == 2:
+            try:
+                freq, ampl = map(float, parts)
+                frequencies.append(freq)
+                amplitudes.append(ampl)
+            except ValueError:
+                raise ValueError("Неверный формат чисел в .txt файле.")
+        else:
+            raise ValueError("Неверный формат строки в .txt файле.")
+
+    return frequencies, amplitudes
+
+
+def parse_csv_file(content):
+    """
+    Парсит данные из .csv файла.
+    Поддерживает разделители "," и ";", а также замену запятых в дробных числах на точки.
+    """
+    frequencies = []
+    amplitudes = []
+
+    lines = content.splitlines()
+    for line in lines:
+        if line.startswith("#"):
+            continue
+        if ',' in line:
+            parts = line.split(',')
+        elif ';' in line:
+            parts = line.split(';')
+        else:
+            raise ValueError("Неверный разделитель в .csv файле.")
+
+        if len(parts) == 2:
+            parts = [part.replace(',', '.') for part in parts]  # замена запятых на точки
+            try:
+                freq, ampl = map(float, parts)
+                frequencies.append(freq)
+                amplitudes.append(ampl)
+            except ValueError:
+                raise ValueError("Неверный формат чисел в .csv файле.")
+        else:
+            raise ValueError("Неверный формат строки в .csv файле.")
+
+    return frequencies, amplitudes
+
 def parse_esp_file(file_content):
     """
     Парсит данные из .esp файла.

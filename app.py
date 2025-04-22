@@ -9,7 +9,9 @@ from data_processing import (
     filter_frequency_range,
     parse_esp_file,
     calculate_mean_std, 
-    calculate_boxplot_stats
+    calculate_boxplot_stats,
+    parse_txt_file,
+    parse_csv_file
 )
 
 # Инициализация Flask приложения
@@ -56,27 +58,10 @@ def upload_files():
                     frequencies, amplitudes = parse_esp_file(content)
                 except Exception as e:
                     return jsonify({'error': f'Ошибка при обработке файла {file.filename}: {str(e)}'}), 400
-            elif filename.endswith('.txt') or filename.endswith('.csv'):
-                # Обработка файлов .txt/.csv
-                try:
-                    lines = content.splitlines()
-                    for line in lines:
-                        if line.startswith("#"):
-                            continue
-                        if ',' in line:
-                            parts = line.split(',')
-                        elif ';' in line:
-                            parts = line.split(';')
-                        else:
-                            parts = line.split()  # На случай разделения пробелами
-                        if len(parts) == 2:
-                            freq, ampl = map(float, parts)
-                            frequencies.append(freq)
-                            amplitudes.append(ampl)
-                        else:
-                            return jsonify({'error': f'Неверный формат данных в файле {file.filename}'}), 400
-                except Exception as e:
-                    return jsonify({'error': f'Ошибка при чтении файла {file.filename}: {str(e)}'}), 400
+            elif filename.endswith('.txt'):
+                frequencies, amplitudes = parse_txt_file(content)
+            elif filename.endswith('.csv'):
+                frequencies, amplitudes = parse_csv_file(content)
             else:
                 return jsonify({'error': f'Неподдерживаемый тип файла: {file.filename}'}), 400
 
