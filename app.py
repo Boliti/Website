@@ -377,10 +377,6 @@ async def export_mean_spectrum(request: ExportMeanRequest):
 
 
 if __name__ == '__main__':
-    import uvicorn
-    print("=" * 50)
-    print("Starting server on http://localhost:8000")
-    print("Test endpoint: http://localhost:8000/test")
-    print("Check files: http://localhost:8000/check-files")
-    print("=" * 50)
-    uvicorn.run(app, host="localhost", port=8000)
+    import uvicorn, os
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
