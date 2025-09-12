@@ -2,3 +2,6 @@ flask
 numpy
 scipy
 plotly
+fastapi
+pydantic
+uvicorn

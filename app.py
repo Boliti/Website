@@ -1,105 +1,207 @@
 import os
-from flask import Flask, request, jsonify, render_template, send_file
+import io
+import zipfile
 import numpy as np
-from data_processing import (
-    baseline_als,
-    smooth_signal,
-    normalize_snv,
-    find_signal_peaks,
-    filter_frequency_range,
-    parse_esp_file,
-    calculate_mean_std, 
-    calculate_boxplot_stats,
-    parse_txt_file,
-    parse_csv_file
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse, HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from typing import List, Optional, Dict, Any
+from pydantic import BaseModel
+from datetime import datetime
+import logging
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Импорты из data_processing (обработка возможных ошибок)
+try:
+    from data_processing import (
+        baseline_als,
+        smooth_signal,
+        normalize_snv,
+        find_signal_peaks,
+        filter_frequency_range,
+        parse_esp_file,
+        calculate_mean_std, 
+        calculate_boxplot_stats,
+        parse_txt_file,
+        parse_csv_file
+    )
+except ImportError as e:
+    logger.error(f"Ошибка импорта data_processing: {e}")
+    # Заглушки функций на случай ошибки импорта
+    def baseline_als(*args, **kwargs): return np.zeros_like(args[0])
+    def smooth_signal(*args, **kwargs): return args[0]
+    def normalize_snv(*args, **kwargs): return args[0]
+    def find_signal_peaks(*args, **kwargs): return [], {}
+    def filter_frequency_range(*args, **kwargs): return args[0], args[1]
+    def parse_esp_file(*args, **kwargs): return [], []
+    def calculate_mean_std(*args, **kwargs): return [], []
+    def calculate_boxplot_stats(*args, **kwargs): return []
+    def parse_txt_file(*args, **kwargs): return [], []
+    def parse_csv_file(*args, **kwargs): return [], []
+
+# Инициализация FastAPI приложения
+app = FastAPI(title="Spectral Processing API", version="1.0.0")
+
+# Настройка CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Инициализация Flask приложения
-app = Flask(__name__)
+# Получаем абсолютный путь к текущей директории
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+logger.info(f"Base directory: {BASE_DIR}")
 
-# Директория для загрузки файлов
-UPLOAD_FOLDER = './uploads'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+# Проверяем существование папок
+TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 
-@app.route('/')
-def index():
+logger.info(f"Templates directory exists: {os.path.exists(TEMPLATES_DIR)}")
+logger.info(f"Static directory exists: {os.path.exists(STATIC_DIR)}")
+
+# Создаем папки если они не существуют
+os.makedirs(TEMPLATES_DIR, exist_ok=True)
+os.makedirs(STATIC_DIR, exist_ok=True)
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Монтирование статических файлов и шаблонов
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
+# Модели Pydantic для валидации данных
+class ProcessDataRequest(BaseModel):
+    frequencies: List[List[float]]
+    amplitudes: List[List[float]]
+    min_freq: Optional[float] = 0
+    max_freq: Optional[float] = 10000
+    remove_baseline: Optional[bool] = False
+    apply_smoothing: Optional[bool] = False
+    normalize: Optional[bool] = False
+    find_peaks: Optional[bool] = False
+    calculate_boxplot: Optional[bool] = False
+    calculate_mean_std: Optional[bool] = False
+    width: Optional[int] = 1
+    prominence: Optional[int] = 1
+    lam: Optional[int] = 1000
+    p: Optional[float] = 0.001
+    window_length: Optional[int] = 25
+    polyorder: Optional[int] = 1
+
+class ExportDataRequest(BaseModel):
+    frequencies: List[List[float]]
+    amplitudes: List[List[float]]
+    fileNames: List[str]
+    params: Dict[str, Any]
+
+class ExportMeanRequest(BaseModel):
+    frequencies: List[float]
+    mean_amplitude: List[float]
+    params: Optional[Dict[str, Any]] = {}
+
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request):
     """
     Отображение главной страницы.
     """
-    return render_template('index.html')
+    try:
+        return templates.TemplateResponse("index.html", {"request": request})
+    except Exception as e:
+        logger.error(f"Error loading template: {e}")
+        return HTMLResponse(content=f"""
+        <html>
+            <body>
+                <h1>Ошибка загрузки шаблона</h1>
+                <p>Проверьте наличие файла index.html в папке templates</p>
+                <p>Ошибка: {str(e)}</p>
+            </body>
+        </html>
+        """)
 
-@app.route('/upload_files', methods=['POST'])
-def upload_files():
+@app.get("/test")
+async def test_endpoint():
+    """
+    Тестовый endpoint для проверки работы сервера.
+    """
+    return {"message": "Server is working!", "status": "OK"}
+
+@app.get("/check-files")
+async def check_files():
+    """
+    Проверка существования файлов.
+    """
+    files = {
+        "index.html": os.path.exists(os.path.join(TEMPLATES_DIR, "index.html")),
+        "style.css": os.path.exists(os.path.join(STATIC_DIR, "style.css")),
+        "app.js": os.path.exists(os.path.join(STATIC_DIR, "app.js"))
+    }
+    return files
+
+@app.post("/upload_files")
+async def upload_files(files: List[UploadFile] = File(...)):
     """
     Загрузка файлов и извлечение данных частот и амплитуд.
     """
-    if 'files' not in request.files:
-        return jsonify({'error': 'Файлы не найдены'}), 400
+    if not files:
+        raise HTTPException(status_code=400, detail="Файлы не найдены")
 
-    files = request.files.getlist('files')
     all_frequencies = []
     all_amplitudes = []
     file_names = []
 
     try:
         for file in files:
-            if file.filename == '':
-                return jsonify({'error': 'Один из файлов не имеет имени'}), 400
+            if file.filename == "":
+                raise HTTPException(status_code=400, detail="Один из файлов не имеет имени")
 
             filename = file.filename.lower()
-            content = file.read().decode('utf-8')
+            content = (await file.read()).decode('utf-8')
 
             frequencies = []
             amplitudes = []
 
             if filename.endswith('.esp'):
-                # Обработка файлов .esp
                 try:
                     frequencies, amplitudes = parse_esp_file(content)
                 except Exception as e:
-                    return jsonify({'error': f'Ошибка при обработке файла {file.filename}: {str(e)}'}), 400
+                    raise HTTPException(status_code=400, detail=f'Ошибка при обработке файла {file.filename}: {str(e)}')
             elif filename.endswith('.txt'):
                 frequencies, amplitudes = parse_txt_file(content)
             elif filename.endswith('.csv'):
                 frequencies, amplitudes = parse_csv_file(content)
             else:
-                return jsonify({'error': f'Неподдерживаемый тип файла: {file.filename}'}), 400
+                raise HTTPException(status_code=400, detail=f'Неподдерживаемый тип файла: {file.filename}')
 
             # Сохраняем результаты
             all_frequencies.append(frequencies)
             all_amplitudes.append(amplitudes)
             file_names.append(file.filename)
 
-        return jsonify({
+        return {
             'message': 'Файлы успешно загружены!',
             'files': file_names,
             'frequencies': all_frequencies,
             'amplitudes': all_amplitudes
-        })
+        }
 
     except Exception as e:
-        return jsonify({'error': f'Ошибка обработки файлов: {str(e)}'}), 400
+        raise HTTPException(status_code=400, detail=f'Ошибка обработки файлов: {str(e)}')
 
-
-@app.route('/process_data', methods=['POST'])
-def process_data():
+@app.post("/process_data")
+async def process_data(request: ProcessDataRequest):
     try:
         # Получаем данные из запроса
-        data = request.json
-        frequencies_list = data['frequencies']
-        amplitudes_list = data['amplitudes']
-        min_freq = data.get('min_freq', 0)
-        max_freq = data.get('max_freq', 10000)
-        remove_baseline = data.get('remove_baseline', False)
-        apply_smoothing = data.get('apply_smoothing', False)
-        normalize = data.get('normalize', False)
-        find_peaks_flag = data.get('find_peaks', False)
-        calculate_boxplot_flag = data.get('calculate_boxplot', False)
-        calculate_mean_std_flag = data.get('calculate_mean_std', False)
-        width = data.get('width', 1)
-        prominence = data.get('prominence', 1)
+        frequencies_list = request.frequencies
+        amplitudes_list = request.amplitudes
         
-
         # Обработка данных
         allFrequencies = []
         allAmplitudes = []
@@ -107,71 +209,94 @@ def process_data():
         peaks_values_list = []
 
         for frequencies, amplitudes in zip(frequencies_list, amplitudes_list):
+            # Конвертируем в numpy arrays
+            freq_array = np.array(frequencies)
+            amp_array = np.array(amplitudes)
+
             # Фильтрация по частотам
-            frequencies, amplitudes = filter_frequency_range(frequencies, amplitudes, min_freq, max_freq)
+            freq_array, amp_array = filter_frequency_range(
+                freq_array, amp_array, request.min_freq, request.max_freq
+            )
 
             # Удаление базовой линии
-            if remove_baseline:
-                amplitudes -= baseline_als(amplitudes, data.get('lam', 1000), data.get('p', 0.001))
+            if request.remove_baseline:
+                amp_array -= baseline_als(amp_array, request.lam, request.p)
 
             # Сглаживание
-            if apply_smoothing:
-                amplitudes = smooth_signal(amplitudes, data.get('window_length', 25), data.get('polyorder', 2))
+            if request.apply_smoothing:
+                amp_array = smooth_signal(amp_array, request.window_length, request.polyorder)
 
             # Нормализация
-            if normalize:
-                amplitudes = normalize_snv(amplitudes)
+            if request.normalize:
+                amp_array = normalize_snv(amp_array)
 
             # Поиск пиков
             peaks = []
             peaks_values = []
-            if find_peaks_flag:
-                peaks, _ = find_signal_peaks(amplitudes, width=width, prominence=prominence)
-                peaks_values = amplitudes[peaks] if len(peaks) > 0 else []
-
-            boxplot_stats = []
-            if data.get('calculate_boxplot', False) and len(allAmplitudes) > 0:
-                boxplot_stats = calculate_boxplot_stats(allAmplitudes)
-
+            if request.find_peaks:
+                peaks, _ = find_signal_peaks(amp_array, width=request.width, prominence=request.prominence)
+                peaks_values = amp_array[peaks] if len(peaks) > 0 else []
 
             # Сохраняем результаты
-            allFrequencies.append(frequencies)
-            allAmplitudes.append(amplitudes)
-            peaks_list.append(peaks.tolist() if len(peaks) > 0 else [])
-            peaks_values_list.append(peaks_values.tolist() if len(peaks_values) > 0 else [])
+            allFrequencies.append(freq_array.tolist())
+            allAmplitudes.append(amp_array.tolist())
+            peaks_list.append(peaks.tolist() if hasattr(peaks, 'tolist') else peaks)
+            peaks_values_list.append(peaks_values.tolist() if hasattr(peaks_values, 'tolist') else peaks_values)
+
+        # Расчет статистики
+        boxplot_stats = []
+        if request.calculate_boxplot and len(allAmplitudes) > 0:
+            boxplot_stats = calculate_boxplot_stats([np.array(amp) for amp in allAmplitudes])
 
         mean_amplitude, std_amplitude = [], []
-        if calculate_mean_std_flag and len(allAmplitudes) > 0:
-            mean_amplitude, std_amplitude = calculate_mean_std(allAmplitudes)
-        
+        if request.calculate_mean_std and len(allAmplitudes) > 0:
+            mean_amplitude, std_amplitude = calculate_mean_std([np.array(amp) for amp in allAmplitudes])
+            mean_amplitude = mean_amplitude.tolist() if hasattr(mean_amplitude, 'tolist') else mean_amplitude
+            std_amplitude = std_amplitude.tolist() if hasattr(std_amplitude, 'tolist') else std_amplitude
 
-        return jsonify({
-            'frequencies': [f.tolist() for f in allFrequencies],
-            'processed_amplitudes': [a.tolist() for a in allAmplitudes],
+        return {
+            'frequencies': allFrequencies,
+            'processed_amplitudes': allAmplitudes,
             'peaks': peaks_list,
             'peaks_values': peaks_values_list,
-            'mean_amplitude': mean_amplitude.tolist() if len(mean_amplitude) > 0 else [],
+            'mean_amplitude': mean_amplitude,
             'boxplot_stats': boxplot_stats,
-            'std_amplitude': std_amplitude.tolist() if len(std_amplitude) > 0 else []
-            
-        })
+            'std_amplitude': std_amplitude
+        }
 
     except Exception as e:
-        print(f"Ошибка обработки данных: {str(e)}")
-        return jsonify({'error': f"Ошибка обработки данных: {str(e)}"}), 400
+        raise HTTPException(status_code=400, detail=f"Ошибка обработки данных: {str(e)}")
 
 import zipfile
 import io
+import numpy as np
 from datetime import datetime
+from fastapi import HTTPException
+from fastapi.responses import StreamingResponse
+from typing import List, Dict, Any
 
-@app.route('/export_processed_data', methods=['POST'])
-def export_processed_data():
+# Модель Pydantic для валидации данных
+class ExportDataRequest(BaseModel):
+    frequencies: List[List[float]]
+    amplitudes: List[List[float]]
+    fileNames: List[str]
+    params: Dict[str, Any]
+
+class ExportMeanRequest(BaseModel):
+    frequencies: List[float]
+    mean_amplitude: List[float]
+    params: Optional[Dict[str, Any]] = {}
+
+@app.post("/export_processed_data")
+async def export_processed_data(request: ExportDataRequest):
+    """
+    Экспорт обработанных данных в ZIP-архив
+    """
     try:
-        data = request.json
-        frequencies = data['frequencies']
-        amplitudes = data['amplitudes']  # Это уже обработанные амплитуды
-        file_names = data['fileNames']
-        params = data['params']
+        frequencies = request.frequencies
+        amplitudes = request.amplitudes
+        file_names = request.fileNames
+        params = request.params
 
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
@@ -208,24 +333,27 @@ def export_processed_data():
             zip_file.writestr("processing_metadata.txt", meta_content)
 
         zip_buffer.seek(0)
-        return send_file(
-            zip_buffer,
-            mimetype='application/zip',
-            as_attachment=True,
-            download_name='processed_spectra.zip'
+        
+        return StreamingResponse(
+            io.BytesIO(zip_buffer.getvalue()),
+            media_type='application/zip',
+            headers={
+                'Content-Disposition': 'attachment; filename=processed_spectra.zip'
+            }
         )
 
     except Exception as e:
-        print(f"Ошибка экспорта: {str(e)}")
-        return jsonify({'error': f"Ошибка экспорта: {str(e)}"}), 500
+        raise HTTPException(status_code=500, detail=f"Ошибка экспорта: {str(e)}")
 
-@app.route('/export_mean_spectrum', methods=['POST'])
-def export_mean_spectrum():
+@app.post("/export_mean_spectrum")
+async def export_mean_spectrum(request: ExportMeanRequest):
+    """
+    Экспорт среднего спектра в CSV
+    """
     try:
-        data = request.json
-        frequencies = np.array(data['frequencies'])
-        mean_amplitude = np.array(data['mean_amplitude'])
-        params = data.get('params', {})
+        frequencies = np.array(request.frequencies)
+        mean_amplitude = np.array(request.mean_amplitude)
+        params = request.params
 
         # Создаем CSV-строку с метаданными
         metadata_lines = ["# Metadata"]
@@ -236,20 +364,23 @@ def export_mean_spectrum():
         csv_data = f"{metadata_str}\n#frequency,mean_amplitude\n"
         csv_data += "\n".join([f"{freq},{amp}" for freq, amp in zip(frequencies, mean_amplitude)])
 
-        response = app.response_class(
-            csv_data,
-            mimetype='text/csv',
+        return StreamingResponse(
+            io.StringIO(csv_data),
+            media_type='text/csv',
             headers={
                 'Content-Disposition': 'attachment; filename=mean_spectrum.csv'
             }
         )
-        return response
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host="0.0.0.0")
-
+    import uvicorn
+    print("=" * 50)
+    print("Starting server on http://localhost:8000")
+    print("Test endpoint: http://localhost:8000/test")
+    print("Check files: http://localhost:8000/check-files")
+    print("=" * 50)
+    uvicorn.run(app, host="localhost", port=8000)

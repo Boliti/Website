@@ -116,7 +116,7 @@ function plotCombinedSpectrum(allFrequencies, allAmplitudes, fileNames, allPeaks
     const layout = {
         title: title,
         xaxis: { title: 'Волновое число (см⁻¹)' },
-        yaxis: { title: 'Интенсивность (Отнс. ед.)' },
+        yaxis: { title: 'Интенсивность (Отн. ед.)' },
         plot_bgcolor: document.body.classList.contains('dark-theme') ? '#1e1e1e' : '#ffffff',
         paper_bgcolor: document.body.classList.contains('dark-theme') ? '#1e1e1e' : '#ffffff',
         font: { color: document.body.classList.contains('dark-theme') ? '#e0e0e0' : '#222' },
@@ -308,7 +308,7 @@ async function downloadMeanSpectrum() {
         p: document.getElementById('p').value || "0.001",
         apply_smoothing: document.getElementById('apply_smoothing').checked,
         window_length: document.getElementById('window_length').value || "25",
-        polyorder: document.getElementById('polyorder').value || "2",
+        polyorder: document.getElementById('polyorder').value || "1",
         normalize: document.getElementById('normalize').checked,
         find_peaks: document.getElementById('find_peaks').checked,
         peak_width: document.getElementById('peak_width').value || "1",
