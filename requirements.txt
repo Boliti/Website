@@ -1,7 +1,8 @@
-flask
 numpy
 scipy
 plotly
 fastapi
 pydantic
-uvicorn
+uvicorn[standard]
+python-multipart
+jinja2
