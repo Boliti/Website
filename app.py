@@ -390,4 +390,105 @@ async def export_mean_spectrum(request: ExportMeanRequest):
 if __name__ == '__main__':
     import uvicorn, os
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="localhost", port=port)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    import os
+from openai import OpenAI
+from dotenv import load_dotenv
+
+# Загрузка переменных окружения
+load_dotenv()
+
+# Инициализация клиента DeepSeek
+deepseek_client = OpenAI(
+    api_key=os.getenv('DEEPSEEK_API_KEY'),
+    base_url=os.getenv('DEEPSEEK_API_BASE')
+)
+
+class SpectrumAnalysisRequest(BaseModel):
+    frequencies: List[float]
+    amplitudes: List[float]
+    spectrum_type: Optional[str] = "unknown"
+    additional_context: Optional[str] = ""
+
+@app.post("/analyze_spectrum")
+async def analyze_spectrum(request: SpectrumAnalysisRequest):
+    """
+    Анализ спектра с помощью DeepSeek AI
+    """
+    try:
+        # Подготовка данных для анализа
+        spectrum_data = []
+        for i, (freq, amp) in enumerate(zip(request.frequencies, request.amplitudes)):
+            if i % 10 == 0:  # Берем каждую 10-ю точку для экономии токенов
+                spectrum_data.append(f"{freq:.2f} cm⁻¹: {amp:.4f}")
+        
+        spectrum_text = "\n".join(spectrum_data[:50])  # Ограничиваем количество точек
+        
+        # Создание промпта для анализа
+        prompt = f"""
+        Проанализируйте следующий спектр (тип: {request.spectrum_type}):
+        
+        {spectrum_text}
+        
+        {request.additional_context}
+        
+        Проанализируйте:
+        1. Основные пики и их возможную природу
+        2. Характерные особенности спектра
+        3. Возможные соединения или материалы
+        4. Качество данных и артефакты
+        5. Рекомендации по дальнейшему анализу
+        
+        Ответ предоставьте в формате Markdown.
+        """
+        
+        # Запрос к DeepSeek API
+        response = deepseek_client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Ты эксперт по спектроскопии. Анализируй спектры и предоставляй детальный анализ на русском языке."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            max_tokens=2000,
+            temperature=0.7
+        )
+        
+        analysis = response.choices[0].message.content
+        
+        return {
+            "analysis": analysis,
+            "model": "deepseek-chat",
+            "tokens_used": response.usage.total_tokens
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка анализа: {str(e)}")

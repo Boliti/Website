@@ -739,3 +739,66 @@ function clearAllSpectra() {
 
 
 
+async function analyzeWithAI(spectrumIndex = 0) {
+    if (allFrequencies.length === 0) {
+        alert("Нет данных для анализа");
+        return;
+    }
+
+    const spectrumType = prompt("Тип спектра (Raman, FTIR, UV-Vis и т.д.):", "Raman");
+    const additionalContext = prompt("Дополнительная информация о образце:", "");
+
+    try {
+        const analysisData = {
+            frequencies: allFrequencies[spectrumIndex],
+            amplitudes: allAmplitudes[spectrumIndex],
+            spectrum_type: spectrumType,
+            additional_context: additionalContext
+        };
+
+        const response = await fetch('/analyze_spectrum', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(analysisData),
+        });
+
+        if (!response.ok) throw new Error('Ошибка анализа');
+
+        const result = await response.json();
+        
+        // Отображение результатов анализа
+        showAnalysisModal(result.analysis);
+        
+    } catch (error) {
+        console.error("Ошибка анализа:", error);
+        alert("Ошибка анализа: " + error.message);
+    }
+}
+
+function showAnalysisModal(content) {
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        z-index: 10000;
+        max-width: 80%;
+        max-height: 80%;
+        overflow: auto;
+    `;
+    
+    modal.innerHTML = `
+        <h3>Анализ DeepSeek AI</h3>
+        <div style="margin: 15px 0; line-height: 1.6;">${content}</div>
+        <button onclick="this.parentElement.remove()" style="padding: 8px 16px; background: #4299e1; color: white; border: none; border-radius: 5px; cursor: pointer;">
+            Закрыть
+        </button>
+    `;
+    
+    document.body.appendChild(modal);
+}

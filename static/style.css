@@ -635,3 +635,30 @@ body.dark-theme .controls::-webkit-scrollbar-thumb {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+.ai-btn {
+    background-color: #9f7aea;
+}
+
+.ai-btn:hover {
+    background-color: #805ad5;
+}
