@@ -11,6 +11,7 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from datetime import datetime
 import logging
+from data_processing import calculate_moving_average
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -95,6 +96,8 @@ class ProcessDataRequest(BaseModel):
     p: Optional[float] = 0.001
     window_length: Optional[int] = 25
     polyorder: Optional[int] = 1
+    show_moving_average: Optional[bool] = False
+    moving_average_window: Optional[int] = 10
 
 class ExportDataRequest(BaseModel):
     frequencies: List[List[float]]
@@ -253,7 +256,13 @@ async def process_data(request: ProcessDataRequest):
             mean_amplitude, std_amplitude = calculate_mean_std([np.array(amp) for amp in allAmplitudes])
             mean_amplitude = mean_amplitude.tolist() if hasattr(mean_amplitude, 'tolist') else mean_amplitude
             std_amplitude = std_amplitude.tolist() if hasattr(std_amplitude, 'tolist') else std_amplitude
-
+        moving_averages = []
+        
+        if request.show_moving_average:  # Добавьте этот параметр в модель
+            for amplitudes in allAmplitudes:
+                moving_avg = calculate_moving_average(amplitudes, request.moving_average_window)
+                moving_averages.append(moving_avg.tolist())
+        
         return {
             'frequencies': allFrequencies,
             'processed_amplitudes': allAmplitudes,
@@ -261,7 +270,9 @@ async def process_data(request: ProcessDataRequest):
             'peaks_values': peaks_values_list,
             'mean_amplitude': mean_amplitude,
             'boxplot_stats': boxplot_stats,
-            'std_amplitude': std_amplitude
+            'std_amplitude': std_amplitude,
+            'moving_averages': moving_averages
+
         }
 
     except Exception as e:
@@ -379,4 +390,4 @@ async def export_mean_spectrum(request: ExportMeanRequest):
 if __name__ == '__main__':
     import uvicorn, os
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="localhost", port=port)

@@ -5,176 +5,218 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Спектральный анализ</title>
     <link rel="stylesheet" href="/static/style.css">
-<script src="https://cdn.plot.ly/plotly-2.14.0.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.14.0.min.js"></script>
     <script defer src="/static/app.js"></script>
 </head>
 <body>
 
 <h1>Обработка спектров</h1>
-    <div class="main-content">
-        <div class="controls">
+<div class="main-content">
+    <div class="controls">
+        <!-- Upload Section -->
+        <div class="control-card">
+            <h3 class="control-title">Управление файлами</h3>
             <div class="upload-section">
-                <input type="file" id="files" multiple title="Загрузите файлы для анализа">
-                <button onclick="uploadFiles()" title="Загрузить выбранные файлы">Загрузить файлы</button>
+                <div class="file-input-container">
+                    <label for="files" class="file-input-label">
+                        <span class="file-input-text">Выбрать файлы</span>
+                    </label>
+                    <input type="file" id="files" multiple title="Загрузите файлы для анализа">
+                </div>
+                <div class="upload-buttons">
+                    <button onclick="uploadFiles()" class="btn-primary" title="Загрузить выбранные файлы">
+                        Загрузить
+                    </button>
+                    <button onclick="addMoreFiles()" class="btn-secondary" title="Добавить файлы к текущим">
+                        Добавить
+                    </button>
+                </div>
+                <div id="file-count" class="file-count">Не выбран ни один файл</div>
+            </div>
+        </div>
+
+        <!-- Parameters Sections -->
+        <div class="control-card">
+            <h3 class="control-title">Параметры обработки</h3>
+            
+            <!-- Frequency Range -->
+            <div class="parameter-group">
+                <h4 class="parameter-title">Диапазон частот</h4>
+                <div class="input-group">
+                    <label for="min_freq" class="input-label">Минимальная частота:</label>
+                    <input type="number" id="min_freq" class="input-field" step="10" placeholder="0" title="Минимальная частота для анализа">
+                </div>
+                <div class="input-group">
+                    <label for="max_freq" class="input-label">Максимальная частота:</label>
+                    <input type="number" id="max_freq" class="input-field" step="10" placeholder="10000" title="Максимальная частота для анализа">
+                </div>
             </div>
 
-            <div class="parameter-section">
-                <h3>Функции и параметры</h3>
-                <h4>Выбор диапазона (ось X)</h4>
-                <div class="tooltip">
-                    <label for="min_freq">Минимальная частота:</label>
-                    <input type="number" id="min_freq" step="10" placeholder="0" title="Минимальная частота для анализа">
-                    <span class="tooltiptext">Минимальная частота для анализа</span>
-                </div>
-
-                <div class="tooltip">
-                    <label for="max_freq">Максимальная частота:</label>
-                    <input type="number" id="max_freq" step="10" placeholder="10000" title="Максимальная частота для анализа">
-                    <span class="tooltiptext">Максимальная частота для анализа</span>
-                </div>
-            </div>
-
-            <div class="parameter-section">
-                <h4>Удаление базовой линии</h4>
-                <div class="tooltip">
-                    <label>
-                        <input type="checkbox" id="remove_baseline" title="Удалить базовую линию с использованием метода BL_ALS">
-                        <span class="tooltiptext">Метод ALS минимизирует разницу между исходными данными и сглаженной базовой линией, при этом учитывая асимметричность ошибок. Это означает, что положительные отклонения (когда сигнал выше базовой линии) и отрицательные отклонения (когда сигнал ниже базовой линии) могут иметь разный вес. Это позволяет сохранить полезный сигнал, удаляя при этом низкочастотную базовую линию.</span>
+            <!-- Baseline Removal -->
+            <div class="parameter-group">
+                <h4 class="parameter-title">Базовая линия
+                    <span class="help-icon" data-tooltip="Метод ALS минимизирует разницу между исходными данными и сглаженной базовой линией, учитывая асимметричность ошибок. Это позволяет сохранить полезный сигнал, удаляя низкочастотную базовую линию.">?</span>
+                </h4>
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="remove_baseline" class="checkbox-input" title="Удалить базовую линию с использованием метода BL_ALS">
                         Метод BL_ALS
                     </label>
                 </div>
-                <div class="tooltip">
-                    <label for="lam">lam:</label>
-                    <input type="number" id="lam" step="100" placeholder="1000" title="Параметр регуляризации для метода BL_ALS">
-                    <span class="tooltiptext">Это параметр регуляризации, который контролирует гладкость базовой линии. Чем больше значение lam, тем более гладкой будет базовая линия. Если lam слишком маленькое, базовая линия будет слишком близка к исходным данным, что может привести к удалению полезного сигнала. Если lam слишком большое, базовая линия будет слишком гладкой, что может привести к неполному удалению базовой линии. Условие: lam > 0.</span>
-                </div>
-
-                <div class="tooltip">
-                    <label for="p">p:</label>
-                    <input type="number" id="p" step="0.01" placeholder="0.001" title="Весовые коэффициенты для метода BL_ALS">
-                    <span class="tooltiptext">Это параметр, который определяет асимметричность весов. Он контролирует, насколько сильно учитываются положительные и отрицательные отклонения от базовой линии. Если p близко к 1, положительные отклонения (сигнал выше базовой линии) будут учитываться сильнее. Если p близко к 0, отрицательные отклонения (сигнал ниже базовой линии) будут учитываться сильнее. Условие: P от 0 до 1</span>
+                <div class="input-row">
+                    <div class="input-group compact">
+                        <label for="lam" class="input-label">lam:</label>
+                        <input type="number" id="lam" class="input-field small" step="100" placeholder="1000" title="Параметр регуляризации для метода BL_ALS">
+                    </div>
+                    <div class="input-group compact">
+                        <label for="p" class="input-label">p:</label>
+                        <input type="number" id="p" class="input-field small" step="0.01" placeholder="0.001" title="Весовые коэффициенты для метода BL_ALS">
+                    </div>
                 </div>
             </div>
-            
 
-            <div class="parameter-section">
-                <h4>Нормировка</h4>
-                <div class="tooltip">
-                    <label>
-                        <input type="checkbox" id="normalize" title="Нормализация методом SNV">
-                        <span class="tooltiptext">Нормировка SNV преобразует данные так, чтобы каждый спектр (или сигнал) имел среднее значение, равное нулю, и стандартное отклонение, равное единице. Это позволяет устранить смещение и масштабировать данные, что делает их более сравнимыми и подходящими для дальнейшего анализа.</span>
-                        Норм. методом SNV
+            <!-- Normalization -->
+            <div class="parameter-group">
+                <h4 class="parameter-title">Нормировка
+                    <span class="help-icon" data-tooltip="Нормировка SNV преобразует данные так, чтобы каждый спектр имел среднее значение, равное нулю, и стандартное отклонение, равное единице. Это устраняет смещение и масштабирует данные для сравнения.">?</span>
+                </h4>
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="normalize" class="checkbox-input" title="Нормализация методом SNV">
+                        Метод SNV
                     </label>
                 </div>
             </div>
 
-            <div class="parameter-section">
-                <h4>Сглаживание</h4>
-                <div class="tooltip">
-                    <label>
-                        <input type="checkbox" id="apply_smoothing" title="Применить фильтр Савицкого-Голая">
-                        <span class="tooltiptext">Основная идея метода: Локальная аппроксимация: Сигнал разбивается на небольшие участки (окна) фиксированной длины. Для каждого окна строится полином заданного порядка, который наилучшим образом аппроксимирует данные в этом окне. Сглаживание: Значение сигнала в центре окна заменяется на значение, вычисленное по аппроксимирующему полиному. Окно перемещается по всему сигналу, и процесс повторяется.</span>
+            <!-- Smoothing -->
+            <div class="parameter-group">
+                <h4 class="parameter-title">Сглаживание
+                    <span class="help-icon" data-tooltip="Фильтр Савицкого-Голая: локальная аппроксимация сигнала полиномом в скользящем окне. Разбивает сигнал на небольшие участки и заменяет значения в центре окна на вычисленные по полиному.">?</span>
+                </h4>
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="apply_smoothing" class="checkbox-input" title="Применить фильтр Савицкого-Голая">
                         Фильтр Савицкого-Голая
                     </label>
                 </div>
-                <div class="tooltip">
-                    <label for="window_length">размер окна:</label>
-                    <input type="number" id="window_length" step="1" placeholder="25" title="Длина окна для фильтра Савицкого-Голая">
-                    <span class="tooltiptext">Это размер окна, в котором происходит аппроксимация сигнала полиномом. Длина окна должна быть нечетным числом, чтобы у окна был четкий центр. Чем больше длина окна, тем сильнее сглаживание, но при этом могут теряться детали сигнала. Если длина окна слишком маленькая, сглаживание будет слабым, и шум может остаться.</span>
-                </div>
-
-                <div class="tooltip">
-                    <label for="polyorder">полином:</label>
-                    <input type="number" id="polyorder" step="1" placeholder="1" title="Порядок полинома для фильтра Савицкого-Голая">
-                    <span class="tooltiptext">Это степень полинома, который используется для аппроксимации данных в окне. Чем выше порядок полинома, тем более сложную форму он может описать. Однако слишком высокий порядок полинома может привести к переобучению (например, к появлению артефактов или выбросов). Обычно используются полиномы низкого порядка (2, 3 или 4).</span>
+                <div class="input-row">
+                    <div class="input-group compact">
+                        <label for="window_length" class="input-label">Размер окна:</label>
+                        <input type="number" id="window_length" class="input-field small" step="1" placeholder="25" title="Длина окна для фильтра Савицкого-Голая">
+                    </div>
+                    <div class="input-group compact">
+                        <label for="polyorder" class="input-label">Полином:</label>
+                        <input type="number" id="polyorder" class="input-field small" step="1" placeholder="1" title="Порядок полинома для фильтра Савицкого-Голая">
+                    </div>
                 </div>
             </div>
-            <div class="parameter-section">
-                <h4>Среднее и СКО</h4>
-                <div class="tooltip">
-                    <label>
-                        <input type="checkbox" id="calculate_mean_std" title="Рассчитать среднее и стандартное отклонение">
-                        <span class="tooltiptext">Вычисляет среднее и стандартное отклонение по всем загруженным и обработанным спектрам.</span>
+
+            <!-- Moving Average -->
+            <div class="parameter-group">
+                <h4 class="parameter-title">Скользящее среднее
+                    <span class="help-icon" data-tooltip="Расчет скользящего среднего для сглаживания данных. Укажите размер окна для усреднения.">?</span>
+                </h4>
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="show_moving_average" class="checkbox-input" title="Показать скользящую среднюю">
+                        Включить
+                    </label>
+                </div>
+                <div class="input-group">
+                    <label for="moving_average_window" class="input-label">Размер окна:</label>
+                    <input type="number" id="moving_average_window" class="input-field" step="1" placeholder="10" title="Размер окна для скользящего среднего">
+                </div>
+            </div>
+
+            <!-- Statistics -->
+            <div class="parameter-group">
+                <h4 class="parameter-title">Статистика
+                    <span class="help-icon" data-tooltip="Вычисляет среднее значение и стандартное отклонение по всем загруженным и обработанным спектрам для статистического анализа.">?</span>
+                </h4>
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="calculate_mean_std" class="checkbox-input" title="Рассчитать среднее и стандартное отклонение">
                         Среднее и СКО
                     </label>
                 </div>
-            </div>
-            <div class="parameter-section">
-                <h4>Отображение графиков</h4>
-                <div class="tooltip">
-                    <label>
-                        <input type="checkbox" id="show_only_mean_std" title="Отображать только среднее и СКО">
-                        <span class="tooltiptext">Если выбрано, отобразятся только графики среднего и стандартного отклонения.</span>
-                        Только среднее и СКО
-                    </label>
-                </div>
-            </div>
-            <div class="parameter-section">
-                <div class="tooltip">
-                    <label>
-                        <input type="checkbox" id="find_peaks" title="Поиск пиков в спектре">
-                        <span class="tooltiptext">Поиск пиков в спектре</span>
-                        Поиск пиков
-                    </label>
-                </div>
-                <div class="tooltip">
-                    <label for="peak_width">width:</label>
-                    <input type="number" id="peak_width" step="10" placeholder="10" title="Ширина пиков">
-                    <span class="tooltiptext">Ширина пиков</span>
-                </div>
-                <div class="tooltip">
-                    <label for="peak_prominence">prom:</label>
-                    <input type="number" id="peak_prominence" step="1" placeholder="1" title="Значимость пиков">
-                    <span class="tooltiptext">Значимость пиков</span>
-                </div>
-            </div>
-            <div class="parameter-section">
-                <h4>Отображение таблицы пиков</h4>
-                <div class="tooltip">
-                    <label>
-                        <input type="checkbox" id="show_peak_table" title="Отобразить таблицу пиков">
-                        <span class="tooltiptext">Отобразить таблицу с координатами пиков.</span>
-                        Таблица пиков
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="calculate_boxplot" class="checkbox-input" title="Построить ящики с усами">
+                        Box plot
                     </label>
                 </div>
             </div>
 
-
-                <div class="parameter-section">
-                    <h4>Статистика</h4>
-                    <div class="tooltip">
-                        <label>
-                            <input type="checkbox" id="calculate_boxplot" title="Построить ящики с усами">
-                            <span class="tooltiptext">Построение box plot (ящиков с усами) для визуализации распределения амплитуд</span>
-                            Ящики с усами
-                        </label>
+            <!-- Peak Detection -->
+            <div class="parameter-group">
+                <h4 class="parameter-title">Поиск пиков
+                    <span class="help-icon" data-tooltip="Автоматическое обнаружение пиков в спектрах с настраиваемыми параметрами ширины и значимости пиков.">?</span>
+                </h4>
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="find_peaks" class="checkbox-input" title="Поиск пиков в спектре">
+                        Включить поиск
+                    </label>
+                </div>
+                <div class="input-row">
+                    <div class="input-group compact">
+                        <label for="peak_width" class="input-label">Width:</label>
+                        <input type="number" id="peak_width" class="input-field small" step="10" placeholder="10" title="Ширина пиков">
+                    </div>
+                    <div class="input-group compact">
+                        <label for="peak_prominence" class="input-label">Prominence:</label>
+                        <input type="number" id="peak_prominence" class="input-field small" step="1" placeholder="1" title="Значимость пиков">
                     </div>
                 </div>
-
-
-
-                
-
-            <div class="actions">
-                <button onclick="processAndPlot()" title="Обработать данные и построить график">Обработать и построить график</button>
-            </div>
-            <div class="actions">
-            <div id="upload_status"></div>
-            <button onclick="downloadMeanSpectrum()" title="Скачать средний спектр">Скачать средний спектр</button>
-            </div>
-            <div class="actions">
-                <button onclick="downloadProcessedData()" title="Скачать обработанные данные">Скачать все спектры</button>
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="show_peak_table" class="checkbox-input" title="Отобразить таблицу пиков">
+                        Показать таблицу
+                    </label>
+                </div>
             </div>
 
+            <!-- Display Options -->
+            <div class="parameter-group">
+                <h4 class="parameter-title">Отображение
+                    <span class="help-icon" data-tooltip="Управление отображением графиков: показывать все спектры или только статистические данные (среднее и стандартное отклонение).">?</span>
+                </h4>
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="show_only_mean_std" class="checkbox-input" title="Отображать только среднее и СКО">
+                        Только статистика
+                    </label>
+                </div>
+            </div>
         </div>
-        <div class="plot-area">
-            <div id="spectrum_plot"></div>
+
+        <!-- Action Buttons -->
+        <div class="control-card">
+            <h3 class="control-title">Действия</h3>
+            <div class="action-buttons">
+                <button onclick="processAndPlot()" class="btn-action process-btn" title="Обработать данные и построить график">
+                    Обработать данные
+                </button>
+                <button onclick="downloadMeanSpectrum()" class="btn-action download-btn" title="Скачать средний спектр">
+                    Скачать среднее
+                </button>
+                <button onclick="downloadProcessedData()" class="btn-action download-btn" title="Скачать обработанные данные">
+                    Скачать все
+                </button>
+                <button onclick="clearAllSpectra()" class="btn-action clear-btn" title="Очистить все спектры">
+                    Очистить все
+                </button>
+            </div>
         </div>
     </div>
+    
     <div class="plot-area">
         <div id="spectrum_plot"></div>
-        <div id="peak_table_container"></div> <!-- Таблица пиков -->
+        <div id="peak_table_container"></div>
     </div>
-    <button id="theme-toggle" title="Переключить тему оформления">Тема</button>
+</div>
+
+<button id="theme-toggle" title="Переключить тему оформления">Тема</button>
+
 </body>
 </html>

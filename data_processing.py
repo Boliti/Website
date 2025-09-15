@@ -63,6 +63,7 @@ def parse_txt_file(content):
     return frequencies, amplitudes
 
 
+
 def parse_csv_file(content):
     """
     Парсит данные из .csv файла.
@@ -290,3 +291,27 @@ def format_spectral_data(frequencies, amplitudes):
         lines.append(f"{freq:.2f}\t{ampl:.6f}")
     
     return "\n".join(lines)
+
+def calculate_moving_average(amplitudes, window_size):
+    """
+    Вычисляет скользящее среднее для массива амплитуд.
+    :param amplitudes: массив амплитуд
+    :param window_size: размер окна усреднения
+    :return: массив скользящего среднего
+    """
+    if not isinstance(amplitudes, np.ndarray):
+        amplitudes = np.array(amplitudes)
+    
+    if amplitudes.size == 0:
+        raise ValueError("Массив амплитуд пустой.")
+    
+    if window_size <= 0:
+        raise ValueError("Размер окна должен быть положительным.")
+    
+    if window_size > len(amplitudes):
+        raise ValueError("Размер окна не может быть больше длины массива.")
+    
+    # Вычисляем скользящее среднее
+    moving_avg = np.convolve(amplitudes, np.ones(window_size)/window_size, mode='same')
+    
+    return moving_avg
