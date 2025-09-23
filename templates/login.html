@@ -1,0 +1,30 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход в аккаунт</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="auth-page">
+    <div class="auth-card">
+        <h1 class="auth-title">Войти</h1>
+        {% if success %}
+        <div class="auth-alert auth-alert--success">{{ success }}</div>
+        {% endif %}
+        {% if error %}
+        <div class="auth-alert auth-alert--error">{{ error }}</div>
+        {% endif %}
+        <form class="auth-form" method="post" action="/login">
+            <label class="auth-label" for="username">Логин</label>
+            <input class="auth-input" type="text" id="username" name="username" value="{{ username }}" required autofocus>
+
+            <label class="auth-label" for="password">Пароль</label>
+            <input class="auth-input" type="password" id="password" name="password" required>
+
+            <button class="btn-primary auth-submit" type="submit">Войти</button>
+        </form>
+        <p class="auth-switch">Нет аккаунта? <a href="/register">Зарегистрироваться</a></p>
+    </div>
+</body>
+</html>

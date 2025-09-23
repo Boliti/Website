@@ -10,6 +10,24 @@
 </head>
 <body>
 
+<header class="auth-header">
+    {% if is_authenticated %}
+        <span class="auth-user">Вы вошли как {{ user }}</span>
+        <form class="logout-form" action="/logout" method="post">
+            <button type="submit" class="btn-secondary logout-btn">Выйти</button>
+        </form>
+    {% else %}
+        <div class="guest-banner">
+            <p class="guest-banner__text">Создайте аккаунт, чтобы сохранять пресеты.</p>
+            <div class="guest-banner__actions">
+                <a href="/login" class="guest-link">Войти</a>
+                <a href="/register" class="guest-link guest-link--primary">Регистрация</a>
+            </div>
+        </div>
+    {% endif %}
+</header>
+<div id="auth-banner" class="auth-banner hidden" role="alert"></div>
+
 <h1>Обработка спектров</h1>
 <div class="main-content">
     <div class="controls">
@@ -17,9 +35,9 @@
         <div class="control-card">
             <h3 class="control-title">Управление файлами</h3>
             <div class="upload-section">
-                <div class="file-input-container">
+                <div class="file-input-container" id="dropZone">
                     <label for="files" class="file-input-label">
-                        <span class="file-input-text">Выбрать файлы</span>
+                        <span class="file-input-text">Выбрать файлы или перетащите их сюда</span>
                     </label>
                     <input type="file" id="files" multiple title="Загрузите файлы для анализа">
                 </div>
@@ -34,6 +52,36 @@
                 <div id="file-count" class="file-count">Не выбран ни один файл</div>
             </div>
         </div>
+        <div id="uploaded-files-container" class="uploaded-files-container"></div>
+
+        <div class="control-card presets-card">
+            <h3 class="control-title">Мои пресеты</h3>
+            <p class="presets-hint" id="presets-hint">
+                {% if is_authenticated %}
+                    Выберите слот, чтобы сохранить текущие параметры.
+                {% else %}
+                    Войдите, чтобы сохранять пресеты.
+                {% endif %}
+            </p>
+            <div id="presets-grid" class="presets-grid">
+                {% for slot in range(1, 6) %}
+                <div class="preset-slot" data-slot="{{ slot }}">
+                    <div class="preset-slot-header">
+                        <span class="preset-slot-label">Слот {{ slot }}</span>
+                        <span class="preset-slot-name preset-slot-name--empty" id="preset-name-{{ slot }}">Свободно</span>
+                    </div>
+                    <div class="preset-slot-updated" id="preset-updated-{{ slot }}"></div>
+                    <div class="preset-slot-actions">
+                        <button type="button" class="btn-secondary" data-action="save" data-slot="{{ slot }}" {% if not is_authenticated %}disabled{% endif %}>Сохранить</button>
+                        <button type="button" class="btn-secondary" data-action="load" data-slot="{{ slot }}" {% if not is_authenticated %}disabled{% endif %}>Загрузить</button>
+                        <button type="button" class="btn-secondary" data-action="delete" data-slot="{{ slot }}" {% if not is_authenticated %}disabled{% endif %}>Удалить</button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        
 
         <!-- Parameters Sections -->
         <div class="control-card">
@@ -203,6 +251,9 @@
                 <button onclick="downloadProcessedData()" class="btn-action download-btn" title="Скачать обработанные данные">
                     Скачать все
                 </button>
+                <button onclick="analyzeWithAI()" class="btn-action ai-btn" title="Анализ с помощью AI">
+                    Анализ AI
+                </button>
                 <button onclick="clearAllSpectra()" class="btn-action clear-btn" title="Очистить все спектры">
                     Очистить все
                 </button>
@@ -237,7 +288,3 @@
 
 
 
-
-<button onclick="analyzeWithAI()" class="btn-action ai-btn" title="Анализ с помощью AI">
-    Анализ AI
-</button>
