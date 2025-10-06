@@ -19,79 +19,25 @@ from pydantic import BaseModel
 from datetime import datetime
 import logging
 from data_processing import calculate_moving_average
-from openai import OpenAI
 from dotenv import load_dotenv
 from pathlib import Path
 
+from services.openrouter import get_openrouter_client
 
-
-
-
-# Получаем абсолютный путь к текущей директории
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(Path(BASE_DIR) / ".env")
 
-# Загрузка переменных окружения из файла .env в текущей директории
-env_path = Path(BASE_DIR) / '.env'
-load_dotenv(dotenv_path=env_path)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Проверка наличия API ключа
-api_key = os.getenv("OPENROUTER_API_KEY")
-if not api_key:
-    # Если ключ не найден, попробуем установить его напрямую
-    api_key = "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"
-    os.environ["OPENROUTER_API_KEY"] = api_key
-    print("Используем хардкодный API ключ")
+SESSION_SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "dev-session-secret")
 
-# Создайте клиент OpenAI для OpenRouter
 try:
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=api_key,
-    )
-    print("OpenAI клиент успешно инициализирован")
-except Exception as e:
-    print(f"Ошибка инициализации OpenAI клиента: {e}")
+    client = get_openrouter_client()
+    logger.info("OpenRouter client initialized")
+except RuntimeError as exc:
+    logger.error("Failed to initialize OpenRouter client: %s", exc)
     client = None
-
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-
-
-import os
-from openai import OpenAI
-from dotenv import load_dotenv
-from pathlib import Path
-
-
-
-# Загрузка переменных окружения из файла .env в текущей директории
-env_path = Path('.') / '.env'
-load_dotenv(dotenv_path=env_path)
-
-# Проверка наличия API ключа
-api_key = os.getenv("OPENROUTER_API_KEY")
-if not api_key:
-    raise ValueError("OPENROUTER_API_KEY environment variable not set")
-
-
-# Настройка OpenAI клиента для OpenRouter
-client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPENROUTER_API_KEY"),
-)
-
-
-
-
-
-
-
-
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # Импорты из data_processing (обработка возможных ошибок)
 try:
@@ -105,7 +51,8 @@ try:
         calculate_mean_std, 
         calculate_boxplot_stats,
         parse_txt_file,
-        parse_csv_file
+        parse_csv_file,
+        parse_any_spectral_file
     )
 except ImportError as e:
     logger.error(f"Ошибка импорта data_processing: {e}")
@@ -120,6 +67,7 @@ except ImportError as e:
     def calculate_boxplot_stats(*args, **kwargs): return []
     def parse_txt_file(*args, **kwargs): return [], []
     def parse_csv_file(*args, **kwargs): return [], []
+    def parse_any_spectral_file(*args, **kwargs): return [], []
 
 # Инициализация FastAPI приложения
 app = FastAPI(title="Spectral Processing API", version="1.0.0")
@@ -134,7 +82,6 @@ app.add_middleware(
 )
 
 USER_DB_PATH = os.path.join(BASE_DIR, "users.db")
-SESSION_SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "spectral-session-key")
 SESSION_MAX_AGE = int(os.getenv("SESSION_MAX_AGE", str(60 * 60 * 24 * 7)))
 MAX_PRESET_SLOTS = 5
 
@@ -147,9 +94,7 @@ app.add_middleware(
     https_only=False
 )
 
-# Получаем абсолютный путь к текущей директории
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-logger.info(f"Base directory: {BASE_DIR}")
+logger.info("Base directory: %s", BASE_DIR)
 
 # Проверяем существование папок
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
@@ -472,23 +417,22 @@ async def upload_files(files: List[UploadFile] = File(...)):
             if file.filename == "":
                 raise HTTPException(status_code=400, detail="Один из файлов не имеет имени")
 
-            filename = file.filename.lower()
-            content = (await file.read()).decode('utf-8')
-
-            frequencies = []
-            amplitudes = []
-
-            if filename.endswith('.esp'):
+            raw_content = await file.read()
+            decoded_content = None
+            for encoding in ("utf-8", "cp1251", "latin-1"):
                 try:
-                    frequencies, amplitudes = parse_esp_file(content)
-                except Exception as e:
-                    raise HTTPException(status_code=400, detail=f'Ошибка при обработке файла {file.filename}: {str(e)}')
-            elif filename.endswith('.txt'):
-                frequencies, amplitudes = parse_txt_file(content)
-            elif filename.endswith('.csv'):
-                frequencies, amplitudes = parse_csv_file(content)
-            else:
-                raise HTTPException(status_code=400, detail=f'Неподдерживаемый тип файла: {file.filename}')
+                    decoded_content = raw_content.decode(encoding)
+                    break
+                except UnicodeDecodeError:
+                    continue
+
+            if decoded_content is None:
+                raise HTTPException(status_code=400, detail=f'Не удалось декодировать файл {file.filename}. Поддерживаются только текстовые файлы.')
+
+            try:
+                frequencies, amplitudes = parse_any_spectral_file(decoded_content)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=f'Ошибка при обработке файла {file.filename}: {str(e)}')
 
             # Сохраняем результаты
             all_frequencies.append(frequencies)
@@ -517,6 +461,7 @@ async def process_data(payload: ProcessDataRequest):
         allAmplitudes = []
         peaks_list = []
         peaks_values_list = []
+        peaks_info_list = []
 
         for frequencies, amplitudes in zip(frequencies_list, amplitudes_list):
             # Конвертируем в numpy arrays
@@ -543,15 +488,25 @@ async def process_data(payload: ProcessDataRequest):
             # Поиск пиков
             peaks = []
             peaks_values = []
+            peaks_info = []
             if payload.find_peaks:
                 peaks, _ = find_signal_peaks(amp_array, width=payload.width, prominence=payload.prominence)
                 peaks_values = amp_array[peaks] if len(peaks) > 0 else []
+                if len(peaks) > 0:
+                    for order, peak_idx in enumerate(peaks, start=1):
+                        peaks_info.append({
+                            'index': int(peak_idx),
+                            'order': order,
+                            'frequency': float(freq_array[peak_idx]),
+                            'amplitude': float(amp_array[peak_idx])
+                        })
 
             # Сохраняем результаты
             allFrequencies.append(freq_array.tolist())
             allAmplitudes.append(amp_array.tolist())
             peaks_list.append(peaks.tolist() if hasattr(peaks, 'tolist') else peaks)
             peaks_values_list.append(peaks_values.tolist() if hasattr(peaks_values, 'tolist') else peaks_values)
+            peaks_info_list.append(peaks_info)
 
         # Расчет статистики
         boxplot_stats = []
@@ -575,6 +530,7 @@ async def process_data(payload: ProcessDataRequest):
             'processed_amplitudes': allAmplitudes,
             'peaks': peaks_list,
             'peaks_values': peaks_values_list,
+            'peaks_info': peaks_info_list,
             'mean_amplitude': mean_amplitude,
             'boxplot_stats': boxplot_stats,
             'std_amplitude': std_amplitude,
@@ -711,6 +667,9 @@ async def analyze_spectrum(payload: AIAnalysisRequest):
     """
     Анализ спектра с помощью DeepSeek AI
     """
+    if client is None:
+        raise HTTPException(status_code=500, detail="AI analysis service is not configured")
+
     try:
         # Находим основные пики в спектре
         import numpy as np
@@ -816,6 +775,8 @@ async def analyze_spectrum(payload: AIAnalysisRequest):
             "spectrum_type": spectrum_type
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Ошибка AI анализа: {str(e)}")
         return {"analysis": f"Ошибка анализа: {str(e)}", "success": False}

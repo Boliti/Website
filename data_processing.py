@@ -1,3 +1,5 @@
+import re
+
 import numpy as np
 from scipy.signal import savgol_filter, find_peaks
 from scipy.sparse.linalg import spsolve
@@ -9,30 +11,36 @@ def calculate_boxplot_stats(amplitudes_list):
     :param amplitudes_list: список массивов амплитуд
     :return: список словарей с статистикой для каждого набора амплитуд
     """
+    if not amplitudes_list:
+        raise ValueError("amplitudes_list must contain at least one series")
+
     boxplot_stats = []
     for amplitudes in amplitudes_list:
-        if len(amplitudes) == 0:
+        array = np.asarray(amplitudes, dtype=float)
+        if array.size == 0:
             continue
-            
-        q1 = np.percentile(amplitudes, 25)
-        median = np.percentile(amplitudes, 50)
-        q3 = np.percentile(amplitudes, 75)
+
+        q1 = np.percentile(array, 25)
+        median = np.percentile(array, 50)
+        q3 = np.percentile(array, 75)
         iqr = q3 - q1
         lower_bound = q1 - 1.5 * iqr
         upper_bound = q3 + 1.5 * iqr
-        
-        # Находим выбросы
-        outliers = amplitudes[(amplitudes < lower_bound) | (amplitudes > upper_bound)]
-        
+
+        outliers = array[(array < lower_bound) | (array > upper_bound)]
+
         boxplot_stats.append({
-            'q1': q1,
-            'median': median,
-            'q3': q3,
-            'lower_bound': lower_bound,
-            'upper_bound': upper_bound,
-            'outliers': outliers.tolist() if len(outliers) > 0 else []
+            'q1': float(q1),
+            'median': float(median),
+            'q3': float(q3),
+            'lower_bound': float(lower_bound),
+            'upper_bound': float(upper_bound),
+            'outliers': outliers.tolist()
         })
-    
+
+    if not boxplot_stats:
+        raise ValueError("No valid amplitude data for boxplot statistics")
+
     return boxplot_stats
 
 
@@ -44,21 +52,23 @@ def parse_txt_file(content):
     frequencies = []
     amplitudes = []
 
-    lines = content.splitlines()
-    for line in lines:
-        if line.startswith("#"):
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
             continue
-        line = line.replace(',', '.')  # замена запятых на точки для дробных чисел
-        parts = line.strip().split()
-        if len(parts) == 2:
-            try:
-                freq, ampl = map(float, parts)
-                frequencies.append(freq)
-                amplitudes.append(ampl)
-            except ValueError:
-                raise ValueError("Неверный формат чисел в .txt файле.")
-        else:
-            raise ValueError("Неверный формат строки в .txt файле.")
+        cleaned = stripped.replace(',', '.')
+        parts = cleaned.split()
+        if len(parts) < 2:
+            continue
+        try:
+            freq, ampl = map(float, parts[:2])
+        except ValueError:
+            continue
+        frequencies.append(freq)
+        amplitudes.append(ampl)
+
+    if not frequencies:
+        raise ValueError("Не удалось прочитать данные из .txt файла.")
 
     return frequencies, amplitudes
 
@@ -72,27 +82,25 @@ def parse_csv_file(content):
     frequencies = []
     amplitudes = []
 
-    lines = content.splitlines()
-    for line in lines:
-        if line.startswith("#"):
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
             continue
-        if ',' in line:
-            parts = line.split(',')
-        elif ';' in line:
-            parts = line.split(';')
-        else:
-            raise ValueError("Неверный разделитель в .csv файле.")
+        delimiter = ',' if ',' in stripped else (';' if ';' in stripped else None)
+        if delimiter is None:
+            continue
+        parts = [part.replace(',', '.') for part in stripped.split(delimiter)]
+        if len(parts) < 2:
+            continue
+        try:
+            freq, ampl = map(float, parts[:2])
+        except ValueError:
+            continue
+        frequencies.append(freq)
+        amplitudes.append(ampl)
 
-        if len(parts) == 2:
-            parts = [part.replace(',', '.') for part in parts]  # замена запятых на точки
-            try:
-                freq, ampl = map(float, parts)
-                frequencies.append(freq)
-                amplitudes.append(ampl)
-            except ValueError:
-                raise ValueError("Неверный формат чисел в .csv файле.")
-        else:
-            raise ValueError("Неверный формат строки в .csv файле.")
+    if not frequencies:
+        raise ValueError("Не удалось прочитать данные из .csv файла.")
 
     return frequencies, amplitudes
 
@@ -120,6 +128,52 @@ def parse_esp_file(file_content):
             continue
 
     return frequencies, amplitudes
+
+
+def _parse_numeric_pairs_generic(content):
+    frequencies = []
+    amplitudes = []
+
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#'):
+            continue
+        normalized = stripped.replace(',', '.')
+        numbers = re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", normalized)
+        if len(numbers) < 2:
+            continue
+        try:
+            freq = float(numbers[0])
+            ampl = float(numbers[1])
+        except ValueError:
+            continue
+        frequencies.append(freq)
+        amplitudes.append(ampl)
+
+    if not frequencies:
+        raise ValueError("Не удалось извлечь пары чисел из файла.")
+
+    return frequencies, amplitudes
+
+
+def parse_any_spectral_file(content):
+    parsers = (parse_csv_file, parse_txt_file, parse_esp_file)
+    last_error = None
+
+    for parser in parsers:
+        try:
+            frequencies, amplitudes = parser(content)
+            if frequencies and amplitudes:
+                return frequencies, amplitudes
+        except ValueError as exc:
+            last_error = exc
+
+    try:
+        return _parse_numeric_pairs_generic(content)
+    except ValueError as exc:
+        last_error = exc
+
+    raise ValueError(str(last_error) if last_error else 'Не удалось обработать содержимое файла.')
 
 
 def baseline_als(amplitudes, lam, p, niter=10):
@@ -246,40 +300,6 @@ def calculate_mean_std(amplitudes_list):
     std_amplitude = np.std(amplitudes_array, axis=0)
 
     return mean_amplitude, std_amplitude
-
-def calculate_boxplot_stats(amplitudes_list):
-    """
-    Вычисляет статистику для построения box plot (ящика с усами)
-    :param amplitudes_list: список массивов амплитуд
-    :return: список словарей с статистикой для каждого набора амплитуд
-    """
-    import numpy as np
-    
-    boxplot_stats = []
-    for amplitudes in amplitudes_list:
-        if len(amplitudes) == 0:
-            continue
-            
-        q1 = np.percentile(amplitudes, 25)
-        median = np.percentile(amplitudes, 50)
-        q3 = np.percentile(amplitudes, 75)
-        iqr = q3 - q1
-        lower_bound = q1 - 1.5 * iqr
-        upper_bound = q3 + 1.5 * iqr
-        
-        # Находим выбросы
-        outliers = amplitudes[(amplitudes < lower_bound) | (amplitudes > upper_bound)]
-        
-        boxplot_stats.append({
-            'q1': q1,
-            'median': median,
-            'q3': q3,
-            'lower_bound': lower_bound,
-            'upper_bound': upper_bound,
-            'outliers': outliers.tolist() if len(outliers) > 0 else []
-        })
-    
-    return boxplot_stats
 
 def format_spectral_data(frequencies, amplitudes):
     """Форматирует спектральные данные для сохранения"""

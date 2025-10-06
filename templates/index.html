@@ -52,7 +52,10 @@
                 <div id="file-count" class="file-count">Не выбран ни один файл</div>
             </div>
         </div>
-        <div id="uploaded-files-container" class="uploaded-files-container"></div>
+        <div class="control-card control-card--uploaded">
+            <h3 class="control-title">Загруженные файлы</h3>
+            <div id="uploaded-files-container" class="uploaded-files-container"></div>
+        </div>
 
         <div class="control-card presets-card">
             <h3 class="control-title">Мои пресеты</h3>
@@ -239,7 +242,7 @@
         </div>
 
         <!-- Action Buttons -->
-        <div class="control-card">
+        <div class="control-card control-card--actions">
             <h3 class="control-title">Действия</h3>
             <div class="action-buttons">
                 <button onclick="processAndPlot()" class="btn-action process-btn" title="Обработать данные и построить график">

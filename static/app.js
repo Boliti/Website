@@ -8,6 +8,7 @@ let processedData = {
     params: {}
 };
 
+let peakTableData = null;
 let draggedFiles = [];
 let latestMeanAmplitude = [];
 const PRESET_DEFAULT_NAME = 'Свободно';
@@ -15,6 +16,10 @@ let presetState = {};
 let presetsLocked = false;
 console.log('app.js loaded successfully');
 
+function initLegendHover() {}
+
+// Централизованно обрабатывает ответы API, требующие авторизации
+// Централизованно обрабатываем ответы API, требующие авторизации
 function redirectIfUnauthorized(response, message) {
     if (response.status === 401) {
         showAuthBanner(message || 'Требуется авторизация.');
@@ -23,6 +28,7 @@ function redirectIfUnauthorized(response, message) {
     return false;
 }
 
+// Показывает баннер с текстом о необходимой авторизации
 function showAuthBanner(message) {
     const banner = document.getElementById('auth-banner');
     if (!banner) {
@@ -32,6 +38,7 @@ function showAuthBanner(message) {
     banner.classList.remove('hidden');
 }
 
+// Скрывает баннер авторизации
 function hideAuthBanner() {
     const banner = document.getElementById('auth-banner');
     if (!banner) {
@@ -40,6 +47,7 @@ function hideAuthBanner() {
     banner.classList.add('hidden');
 }
 
+// Обновляет текст подсказки под панелью пресетов
 function updatePresetsHint(text) {
     const hint = document.getElementById('presets-hint');
     if (!hint) {
@@ -48,23 +56,27 @@ function updatePresetsHint(text) {
     hint.textContent = text;
 }
 
+// Массово блокирует или разблокирует кнопки панелей пресетов
 function updatePresetButtonsDisabled(disabled) {
     document.querySelectorAll('.preset-slot-actions button').forEach((button) => {
         button.disabled = disabled;
     });
 }
 
+// Переводит панель пресетов в заблокированное состояние
 function lockPresetPanel(message) {
     presetsLocked = true;
     updatePresetButtonsDisabled(true);
     updatePresetsHint(message || 'Войдите, чтобы сохранять пресеты.');
 }
 
+// Разрешает взаимодействие с панелью пресетов
 function unlockPresetPanel() {
     presetsLocked = false;
     updatePresetButtonsDisabled(false);
 }
 
+// Обновляет визуализацию слотов пресетов, полученных с сервера
 function renderPresetSlots(items) {
     const slotsById = {};
     (items || []).forEach((item) => {
@@ -97,6 +109,7 @@ function renderPresetSlots(items) {
     }
 }
 
+// Собираем текущее состояние всех контролов для сохранения пресета
 function collectPresetPayload() {
     const payload = {};
     document.querySelectorAll('.controls input, .controls select, .controls textarea').forEach((field) => {
@@ -112,6 +125,7 @@ function collectPresetPayload() {
     return payload;
 }
 
+// Применяет загруженный пресет к элементам управления
 function applyPresetPayload(payload) {
     if (!payload || typeof payload !== 'object') {
         return;
@@ -132,6 +146,7 @@ function applyPresetPayload(payload) {
     });
 }
 
+// Получает список пресетов из API и синхронизирует UI
 async function refreshPresetSlots() {
     const grid = document.getElementById('presets-grid');
     if (!grid) {
@@ -155,6 +170,7 @@ async function refreshPresetSlots() {
     }
 }
 
+// Отправляет текущие параметры на сервер для сохранения в выбранном слоте
 async function savePreset(slot) {
     try {
         const payload = collectPresetPayload();
@@ -190,6 +206,7 @@ async function savePreset(slot) {
     }
 }
 
+// Загружает пресет из слота и перерисовывает графики
 async function loadPreset(slot) {
     try {
         const response = await fetch(`/presets/${slot}`, { credentials: 'include' });
@@ -217,6 +234,7 @@ async function loadPreset(slot) {
     }
 }
 
+// Удаляет пресет с бэкенда и обновляет UI
 async function deletePreset(slot) {
     try {
         const response = await fetch(`/presets/${slot}`, {
@@ -245,6 +263,7 @@ async function deletePreset(slot) {
     }
 }
 
+// Назначает обработчики кликов для слотов пресетов
 function initPresetPanel() {
     const grid = document.getElementById('presets-grid');
     if (!grid) {
@@ -384,10 +403,14 @@ function initDragAndDrop() {
         }
     });
     
-    document.querySelector('#dropZone button').addEventListener('click', function(e) {
-        e.stopPropagation();
-        fileInput.click();
-    });
+    const dropZoneButton = document.querySelector('#dropZone button');
+    if (dropZoneButton) {
+        dropZoneButton.addEventListener('click', function(e) {
+// Включает удаление спектра по клику на линию графика
+            e.stopPropagation();
+            fileInput.click();
+        });
+    }
 }
 
 // Обработка сброшенных файлов
@@ -452,6 +475,8 @@ function removeFileFromList(index) {
             
             // Перестраиваем график
             rebuildPlot();
+            peakTableData = null;
+            updatePeakTableVisibility();
             
             // Обновляем список загруженных файлов
             updateUploadedFilesList();
@@ -479,6 +504,7 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('Plot element:', document.getElementById('spectrum_plot'));
 });
 
+// Сокращает длинные имена файлов для легенды
 function truncateFileName(name, length = 20) {
     if (!name) return `Файл`;
     return name.length > length ? name.slice(0, length - 3) + '...' : name;
@@ -504,7 +530,13 @@ function plotCombinedSpectrum(allFrequencies, allAmplitudes, fileNames, allPeaks
                 },
                 yaxis: 'y1',
                 // Добавляем кастомные данные для идентификации
-                customdata: [i] // Сохраняем индекс файла
+                customdata: [i],
+                meta: {
+                    fileIndex: i,
+                    role: 'spectrum',
+                    baseOpacity: 1,
+                    lineWidth: 1
+                }
             });
         
             if (allPeaks[i] && allPeaks[i].length > 0) {
@@ -524,7 +556,12 @@ function plotCombinedSpectrum(allFrequencies, allAmplitudes, fileNames, allPeaks
                         size: 10,
                         color: lineColors[i % lineColors.length]
                     },
-                    yaxis: 'y1'
+                    yaxis: 'y1',
+                    meta: {
+                        fileIndex: i,
+                        role: 'peaks',
+                        baseOpacity: 1
+                    }
                 });
             }
 
@@ -542,7 +579,13 @@ function plotCombinedSpectrum(allFrequencies, allAmplitudes, fileNames, allPeaks
                         dash: 'dash'
                     },
                     opacity: 0.8,
-                    yaxis: 'y1'
+                    yaxis: 'y1',
+                    meta: {
+                        fileIndex: i,
+                        role: 'moving-average',
+                        baseOpacity: 0.8,
+                        lineWidth: 2
+                    }
                 });
             }
         }
@@ -560,7 +603,12 @@ function plotCombinedSpectrum(allFrequencies, allAmplitudes, fileNames, allPeaks
                 mode: 'lines',
                 name: 'Среднее значение',
                 line: { color: 'red', width: 3 },
-                yaxis: 'y1'
+                yaxis: 'y1',
+                meta: {
+                    role: 'mean',
+                    baseOpacity: 1,
+                    lineWidth: 3
+                }
             },
             {
                 x: allFrequencies[0],
@@ -569,7 +617,12 @@ function plotCombinedSpectrum(allFrequencies, allAmplitudes, fileNames, allPeaks
                 mode: 'lines',
                 name: 'Среднее + 1σ',
                 line: { color: 'orange', width: 2, dash: 'dot' },
-                yaxis: 'y1'
+                yaxis: 'y1',
+                meta: {
+                    role: 'mean-plus-sigma',
+                    baseOpacity: 1,
+                    lineWidth: 2
+                }
             },
             {
                 x: allFrequencies[0],
@@ -578,7 +631,12 @@ function plotCombinedSpectrum(allFrequencies, allAmplitudes, fileNames, allPeaks
                 mode: 'lines',
                 name: 'Среднее - 1σ',
                 line: { color: 'orange', width: 2, dash: 'dot' },
-                yaxis: 'y1'
+                yaxis: 'y1',
+                meta: {
+                    role: 'mean-minus-sigma',
+                    baseOpacity: 1,
+                    lineWidth: 2
+                }
             }
         );
     }
@@ -605,7 +663,11 @@ function plotCombinedSpectrum(allFrequencies, allAmplitudes, fileNames, allPeaks
             fillcolor: 'rgba(100, 100, 255, 0.3)',
             yaxis: 'y1',
             hoverinfo: 'y+name',
-            showlegend: false
+            showlegend: false,
+            meta: {
+                role: 'boxplot',
+                baseOpacity: 1
+            }
         });
     }
 
@@ -627,7 +689,7 @@ function plotCombinedSpectrum(allFrequencies, allAmplitudes, fileNames, allPeaks
         margin: { l: 60, r: 150, b: 60, t: 80, pad: 4 }
     };
 
-    Plotly.newPlot('spectrum_plot', plotData, layout).then(function() {
+    Plotly.newPlot('spectrum_plot', plotData, layout, { responsive: true }).then(function() {
         initLegendHover();
     });
 }
@@ -672,6 +734,9 @@ async function uploadFiles() {
             // Обновляем список загруженных файлов
             updateUploadedFilesList();
 
+            peakTableData = null;
+            updatePeakTableVisibility();
+
             // Очищаем список перетащенных файлов после успешной загрузки
             draggedFiles = [];
             document.getElementById('file-count').textContent = `Загружено ${result.files.length} файлов`;
@@ -704,7 +769,7 @@ function updateUploadedFilesList() {
     
     fileNames.forEach((fileName, index) => {
         const fileElement = document.createElement('div');
-        fileElement.className = 'uploaded-file';
+        fileElement.classList.add('uploaded-file');
         fileElement.innerHTML = `
             <span class="file-icon">📄</span>
             <span class="file-name" data-index="${index}">${fileName}</span>
@@ -713,11 +778,10 @@ function updateUploadedFilesList() {
         uploadedFilesContainer.appendChild(fileElement);
         
         // Добавляем обработчики для подсветки спектра
-        const fileNameElement = fileElement.querySelector('.file-name');
-        fileNameElement.addEventListener('mouseenter', () => {
+        fileElement.addEventListener('mouseenter', () => {
             highlightSpectrum(index);
         });
-        fileNameElement.addEventListener('mouseleave', () => {
+        fileElement.addEventListener('mouseleave', () => {
             resetSpectrumHighlight();
         });
     });
@@ -742,6 +806,8 @@ function removeUploadedFile(index) {
         
         // Перестраиваем график
         rebuildPlot();
+        peakTableData = null;
+        updatePeakTableVisibility();
         
         // Обновляем список загруженных файлов
         updateUploadedFilesList();
@@ -776,6 +842,7 @@ document.addEventListener('DOMContentLoaded', function() {
     updateUploadedFilesList();
 });
 
+// Основной цикл обработки: отправляем параметры на бэкенд и обновляем визуализацию
 async function processAndPlot() {
     console.log("Обработка данных...");
 
@@ -836,6 +903,21 @@ async function processAndPlot() {
             params: params
         };
 
+        const peaksInfo = Array.isArray(result.peaks_info) ? result.peaks_info : [];
+
+        if (Array.isArray(result.peaks) || hasAnyPeakInfo(peaksInfo)) {
+            // Кэшируем подготовленные данные по пикам, чтобы переиспользовать их при переключении чекбоксов
+            peakTableData = {
+                frequencies: result.frequencies,
+                amplitudes: result.processed_amplitudes,
+                peaks: Array.isArray(result.peaks) ? result.peaks : [],
+                peaksInfo,
+                fileNames: [...fileNames]
+            };
+        } else {
+            peakTableData = null;
+        }
+
         plotCombinedSpectrum(
             result.frequencies,
             result.processed_amplitudes,
@@ -850,12 +932,7 @@ async function processAndPlot() {
         );
         
         window.latestMeanAmplitude = result.mean_amplitude;
-
-        if (document.getElementById('show_peak_table').checked && result.peaks && result.peaks.length > 0) {
-            renderPeakTable(result.frequencies, result.processed_amplitudes, result.peaks, fileNames);
-        } else {
-            document.getElementById('peak_table_container').innerHTML = '';
-        }
+        updatePeakTableVisibility();
 
     } catch (error) {
         console.error("Ошибка:", error);
@@ -863,6 +940,7 @@ async function processAndPlot() {
     }
 }
 
+// Формирует архив с обработанными спектрами и инициирует скачивание
 async function downloadProcessedData() {
     if (processedData.frequencies.length === 0) {
         alert("Нет обработанных данных для сохранения. Сначала обработайте файлы.");
@@ -897,6 +975,7 @@ async function downloadProcessedData() {
     }
 }
 
+// Экспортирует усреднённый спектр в CSV
 async function downloadMeanSpectrum() {
     if (!allFrequencies.length || !window.latestMeanAmplitude) {
         alert("Сначала загрузите и обработайте данные.");
@@ -955,57 +1034,126 @@ async function downloadMeanSpectrum() {
     }
 }
 
-function renderPeakTable(frequenciesList, amplitudesList, peaksList, fileNames) {
+// Строим таблицу пиков: каждая группа оборачивается в <details> для компактности
+function renderPeakTable(peaksInfoList, fileNames) {
     const container = document.getElementById('peak_table_container');
     container.innerHTML = '';
 
-    peaksList.forEach((peaks, index) => {
-        if (!peaks || peaks.length === 0) return;
+    peaksInfoList.forEach((datasetPeaks, index) => {
+        if (!datasetPeaks || datasetPeaks.length === 0) {
+            return;
+        }
+
+        const group = document.createElement('details');
+        group.className = 'peak-table-group';
+        if (index === 0) {
+            group.open = true;
+        }
+
+        const summary = document.createElement('summary');
+        summary.className = 'peak-table-group__summary';
+        summary.textContent = fileNames[index] ? `Пики — ${fileNames[index]}` : `Пики — Файл ${index + 1}`;
+        group.appendChild(summary);
+
+        const tableWrapper = document.createElement('div');
+        tableWrapper.className = 'peak-table-group__table-wrapper';
 
         const table = document.createElement('table');
-        table.style.borderCollapse = 'collapse';
-        table.style.marginBottom = '20px';
-        table.style.width = '100%';
+        table.className = 'peak-table';
 
-        const caption = document.createElement('caption');
-        caption.textContent = `Пики — ${fileNames[index] || `Файл ${index + 1}`}`;
-        caption.style.fontWeight = 'bold';
-        table.appendChild(caption);
-
+        const thead = document.createElement('thead');
         const headerRow = document.createElement('tr');
-        ['#', 'Частота (см⁻¹)', 'Интенсивность'].forEach(text => {
+        ['#', 'Частота (см⁻¹)', 'Интенсивность'].forEach((text, colIndex) => {
             const th = document.createElement('th');
             th.textContent = text;
-            th.style.border = '1px solid #ccc';
-            th.style.padding = '5px';
-            th.style.backgroundColor = '#f0f0f0';
+            th.className = 'peak-table__head-cell';
+            if (colIndex > 0) {
+                th.classList.add('peak-table__head-cell--numeric');
+            }
             headerRow.appendChild(th);
         });
-        table.appendChild(headerRow);
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
 
-        peaks.forEach((peakIdx, peakIndex) => {
+        const tbody = document.createElement('tbody');
+
+        datasetPeaks.forEach((peakInfo, peakIndex) => {
             const row = document.createElement('tr');
+            row.className = 'peak-table__row';
 
-            const freq = frequenciesList[index][peakIdx];
-            const amp = amplitudesList[index][peakIdx];
+            const freq = Number(peakInfo.frequency);
+            const amp = Number(peakInfo.amplitude);
+            const order = Number.isFinite(Number(peakInfo.order)) ? Number(peakInfo.order) : peakIndex + 1;
 
-            [peakIndex + 1, freq.toFixed(2), amp.toFixed(2)].forEach(val => {
+            [order, freq.toFixed(2), amp.toFixed(2)].forEach((val, colIndex) => {
                 const td = document.createElement('td');
                 td.textContent = val;
-                td.style.border = '1px solid #ccc';
-                td.style.padding = '5px';
+                td.className = 'peak-table__cell';
+                if (colIndex === 0) {
+                    td.classList.add('peak-table__cell--index');
+                } else {
+                    td.classList.add('peak-table__cell--numeric');
+                }
                 row.appendChild(td);
             });
 
-            table.appendChild(row);
+            tbody.appendChild(row);
         });
 
-        container.appendChild(table);
+        table.appendChild(tbody);
+        tableWrapper.appendChild(table);
+        group.appendChild(tableWrapper);
+        container.appendChild(group);
     });
+}
+
+// Проверяет, содержит ли хотя бы один набор информацию о пиках
+function hasAnyPeakInfo(peaksInfoList) {
+    if (!Array.isArray(peaksInfoList)) {
+        return false;
+    }
+    return peaksInfoList.some((entry) => Array.isArray(entry) && entry.length > 0);
+}
+
+// Управляем отображением панели пиков в зависимости от настроек и наличия данных
+function updatePeakTableVisibility() {
+    const container = document.getElementById('peak_table_container');
+    if (!container) {
+        return;
+    }
+
+    container.classList.remove('peaks-panel--visible', 'peaks-panel--empty');
+    container.innerHTML = '';
+
+    const showTableCheckbox = document.getElementById('show_peak_table');
+    if (!showTableCheckbox || !showTableCheckbox.checked) {
+        return;
+    }
+
+    const peaksInfo = Array.isArray(peakTableData && peakTableData.peaksInfo) ? peakTableData.peaksInfo : [];
+
+    if (!peakTableData || peaksInfo.length === 0 || !hasAnyPeakInfo(peaksInfo)) {
+        container.classList.add('peaks-panel--visible', 'peaks-panel--empty');
+        const placeholder = document.createElement('div');
+        placeholder.className = 'no-peaks';
+        placeholder.textContent = 'Пики не найдены или не рассчитаны.';
+        container.appendChild(placeholder);
+        return;
+    }
+
+    container.classList.add('peaks-panel--visible');
+
+    renderPeakTable(
+        peaksInfo,
+        peakTableData.fileNames
+    );
 }
 
 
 
+
+
+// Усиливает выбранную линию и приглушает остальные кривые
 function highlightSingleSpectrum(curveNumber) {
     // Получаем информацию о всех кривых
     Plotly.restyle('spectrum_plot', {
@@ -1015,13 +1163,6 @@ function highlightSingleSpectrum(curveNumber) {
         Plotly.restyle('spectrum_plot', {
             'line.width': 4
         }, [curveNumber]);
-    });
-}
-
-function resetSpectrumHighlight() {
-    // Получаем текущее состояние всех кривых
-    Plotly.update('spectrum_plot', {
-        'line.width': 1
     });
 }
 
@@ -1035,6 +1176,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Добавьте эту функцию в app.js
+// Настраивает подсказки для элементов справки
 function initTooltips() {
     const helpIcons = document.querySelectorAll('.help-icon');
     
@@ -1083,6 +1225,28 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 
+document.addEventListener('DOMContentLoaded', function() {
+    const showPeakTableCheckbox = document.getElementById('show_peak_table');
+    if (showPeakTableCheckbox) {
+        showPeakTableCheckbox.addEventListener('change', updatePeakTableVisibility);
+    }
+
+    const findPeaksCheckbox = document.getElementById('find_peaks');
+    if (findPeaksCheckbox) {
+        findPeaksCheckbox.addEventListener('change', function() {
+            if (!findPeaksCheckbox.checked) {
+                const showCheckbox = document.getElementById('show_peak_table');
+                if (showCheckbox) {
+                    showCheckbox.checked = false;
+                }
+                peakTableData = null;
+            }
+            updatePeakTableVisibility();
+        });
+    }
+});
+
+
 
 // Добавьте эту функцию для обработки кликов по линиям графика
 function initGraphClickHandler() {
@@ -1117,6 +1281,7 @@ function initGraphClickHandler() {
 let selectedSpectrumIndex = -1;
 
 
+// Создаёт кнопку удаления спектра, если её ещё нет
 function createDeleteButton() {
     if (!document.getElementById('delete-spectrum-btn')) {
         const deleteBtn = document.createElement('button');
@@ -1130,6 +1295,7 @@ function createDeleteButton() {
 }
 
 // Добавьте функцию для показа кнопки удаления
+// Располагает кнопку удаления рядом с точкой клика
 function showDeleteButton(x, y, spectrumIndex) {
     const deleteBtn = createDeleteButton();
     selectedSpectrumIndex = spectrumIndex;
@@ -1147,6 +1313,7 @@ function showDeleteButton(x, y, spectrumIndex) {
 }
 
 // Функция удаления спектра
+// Удаляет выбранный спектр и обновляет графики
 function removeSelectedSpectrum() {
     if (selectedSpectrumIndex === -1) return;
     
@@ -1161,11 +1328,14 @@ function removeSelectedSpectrum() {
     
     // Перестраиваем график
     rebuildPlot();
+    peakTableData = null;
+    updatePeakTableVisibility();
     selectedSpectrumIndex = -1;
 }
 
 
 // Функция для поиска индекса спектра по имени
+// Находит позицию спектра в массиве по названию серии Plotly
 function findSpectrumIndexByName(traceName) {
     for (let i = 0; i < fileNames.length; i++) {
         const fileName = truncateFileName(fileNames[i]) || `Файл ${i + 1}`;
@@ -1176,27 +1346,13 @@ function findSpectrumIndexByName(traceName) {
     return -1;
 }
 
-// Упрощенная функция rebuildPlot
-function rebuildPlot() {
-    plotCombinedSpectrum(
-        allFrequencies,
-        allAmplitudes,
-        fileNames,
-        [],
-        [],
-        [],
-        false,
-        [],
-        `Спектры (${allFrequencies.length} файлов)`
-    );
-}
-
 // Добавьте вызов createDeleteButton при загрузке
 document.addEventListener('DOMContentLoaded', function() {
     createDeleteButton();
 });
 
 
+// Добавляет новые файлы, не очищая ранее загруженные
 async function addMoreFiles() {
     if (draggedFiles.length === 0) {
         return;
@@ -1240,6 +1396,9 @@ async function addMoreFiles() {
             // Обновляем список загруженных файлов
             updateUploadedFilesList();
 
+            peakTableData = null;
+            updatePeakTableVisibility();
+
             // Очищаем список перетащенных файлов после успешной загрузки
             draggedFiles = [];
             document.getElementById('file-count').textContent = `Всего файлов: ${fileNames.length}`;
@@ -1259,6 +1418,7 @@ async function addMoreFiles() {
 }
 
 // Функция для очистки всех спектров
+// Полностью сбрасывает состояние приложения и графики
 function clearAllSpectra() {
     if (allFrequencies.length === 0) {
         alert('Нет спектров для очистки');
@@ -1277,6 +1437,8 @@ function clearAllSpectra() {
             params: {}
         };
         draggedFiles = [];
+        peakTableData = null;
+        updatePeakTableVisibility();
         
         // Очищаем график
         Plotly.purge('spectrum_plot');
@@ -1328,6 +1490,7 @@ function clearAllSpectra() {
 
 
 
+// Запрашивает у AI сервиса текстовое объяснение спектра
 async function analyzeWithAI() {
     if (allFrequencies.length === 0) {
         alert("Сначала загрузите и обработайте данные.");
@@ -1379,6 +1542,7 @@ async function analyzeWithAI() {
     }
 }
 
+// Показывает результат AI-анализа в модальном окне
 function showAIAnalysis(analysisText) {
     // Создаем модальное окно для отображения анализа
     const modal = document.createElement('div');
@@ -1414,57 +1578,95 @@ function showAIAnalysis(analysisText) {
 
 
 
-// Подсветка конкретного спектра
-function highlightSpectrum(index) {
-    if (index >= 0 && index < allFrequencies.length) {
-        // Получаем текущие данные графика
-        const plotData = document.getElementById('spectrum_plot').data;
-        
-        // Создаем массив обновлений для всех traces
-        const updates = plotData.map((trace, i) => {
-            // Увеличиваем ширину линии для выбранного спектра
-            if (i === index && trace.mode === 'lines') {
-                return { 'line.width': 4 };
+// Подсвечивает соответствующий спектр на графике
+function highlightSpectrum(fileIndex) {
+    const plot = document.getElementById('spectrum_plot');
+    if (!plot || !plot.data || fileIndex < 0) {
+        return;
+    }
+
+    const highlightIndices = [];
+    const highlightOpacities = [];
+    const highlightLineIndices = [];
+    const highlightLineWidths = [];
+
+    const dimIndices = [];
+    const dimOpacities = [];
+    const dimLineIndices = [];
+    const dimLineWidths = [];
+
+    plot.data.forEach((trace, idx) => {
+        const meta = trace.meta || {};
+        if (meta.fileIndex === fileIndex) {
+            highlightIndices.push(idx);
+            highlightOpacities.push(meta.baseOpacity ?? 1);
+            if (trace.mode && trace.mode.includes('lines')) {
+                const baseWidth = meta.lineWidth ?? (trace.line && trace.line.width) ?? 1;
+                highlightLineIndices.push(idx);
+                highlightLineWidths.push(baseWidth + 2);
             }
-            // Для остальных спектров уменьшаем непрозрачность
-            else if (trace.mode === 'lines' && i < allFrequencies.length) {
-                return { 'opacity': 0.3 };
+        } else if (typeof meta.fileIndex === 'number') {
+            dimIndices.push(idx);
+            const baseOpacity = meta.baseOpacity ?? 1;
+            dimOpacities.push(Math.max(0, Math.min(1, baseOpacity * 0.25)));
+            if (trace.mode && trace.mode.includes('lines')) {
+                const baseWidth = meta.lineWidth ?? (trace.line && trace.line.width) ?? 1;
+                dimLineIndices.push(idx);
+                dimLineWidths.push(Math.max(1, baseWidth * 0.75));
             }
-            // Для не-спектральных элементов (пики, среднее и т.д.) уменьшаем непрозрачность
-            else {
-                return { 'opacity': 0.1 };
-            }
-        });
-        
-        // Применяем обновления
-        Plotly.restyle('spectrum_plot', updates);
+        }
+    });
+
+    if (!highlightIndices.length) {
+        return;
+    }
+
+    if (dimIndices.length) {
+        Plotly.restyle(plot, { opacity: dimOpacities }, dimIndices);
+    }
+    if (dimLineIndices.length) {
+        Plotly.restyle(plot, { 'line.width': dimLineWidths }, dimLineIndices);
+    }
+
+    Plotly.restyle(plot, { opacity: highlightOpacities }, highlightIndices);
+    if (highlightLineIndices.length) {
+        Plotly.restyle(plot, { 'line.width': highlightLineWidths }, highlightLineIndices);
     }
 }
 
-// Сброс подсветки всех спектров
+// Сбрасывает подсветку и возвращает исходные параметры отображения
 function resetSpectrumHighlight() {
-    // Получаем текущие данные графика
-    const plotData = document.getElementById('spectrum_plot').data;
-    
-    // Создаем массив обновлений для восстановления исходного состояния
-    const updates = plotData.map((trace, i) => {
-        // Восстанавливаем ширину линии и непрозрачность для всех спектров
-        if (trace.mode === 'lines' && i < allFrequencies.length) {
-            return { 
-                'line.width': 1,
-                'opacity': 1 
-            };
+    const plot = document.getElementById('spectrum_plot');
+    if (!plot || !plot.data) {
+        return;
+    }
+
+    const opacityIndices = [];
+    const opacities = [];
+    const lineIndices = [];
+    const lineWidths = [];
+
+    plot.data.forEach((trace, idx) => {
+        const meta = trace.meta || {};
+        if (typeof meta.baseOpacity !== 'undefined' || typeof meta.fileIndex === 'number') {
+            opacityIndices.push(idx);
+            opacities.push(meta.baseOpacity ?? 1);
         }
-        // Восстанавливаем непрозрачность для не-спектральных элементов
-        else {
-            return { 'opacity': 1 };
+        if (trace.mode && trace.mode.includes('lines')) {
+            const baseWidth = meta.lineWidth ?? (trace.line && trace.line.width) ?? 1;
+            lineIndices.push(idx);
+            lineWidths.push(baseWidth);
         }
     });
-    
-    // Применяем обновления
-    Plotly.restyle('spectrum_plot', updates);
+
+    if (opacityIndices.length) {
+        Plotly.restyle(plot, { opacity: opacities }, opacityIndices);
+    }
+    if (lineIndices.length) {
+        Plotly.restyle(plot, { 'line.width': lineWidths }, lineIndices);
+    }
 }
 
 document.addEventListener('DOMContentLoaded', function() {
     initPresetPanel();
-});
+});
