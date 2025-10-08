@@ -31,6 +31,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 SESSION_SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "dev-session-secret")
+DATABASE_URL = os.getenv("DATABASE_URL")
+try:
+    import psycopg2  # type: ignore
+    import psycopg2.extras  # type: ignore
+except Exception:
+    psycopg2 = None  # type: ignore
 
 try:
     client = get_openrouter_client()
@@ -81,7 +87,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-USER_DB_PATH = os.path.join(BASE_DIR, "users.db")
+USER_DB_PATH = os.getenv("USER_DB_PATH", os.path.join(BASE_DIR, "users.db"))
 SESSION_MAX_AGE = int(os.getenv("SESSION_MAX_AGE", str(60 * 60 * 24 * 7)))
 MAX_PRESET_SLOTS = 5
 
@@ -111,38 +117,110 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 
+class _DBResult:
+    def __init__(self, driver: str, cursor):
+        self._driver = driver
+        self._cursor = cursor
+        self.rowcount = getattr(cursor, 'rowcount', -1)
+
+    def fetchone(self):
+        return self._cursor.fetchone()
+
+    def fetchall(self):
+        return self._cursor.fetchall()
+
+
+class DBConnection:
+    def __init__(self, driver: str, conn):
+        self.driver = driver
+        self._conn = conn
+
+    def execute(self, sql: str, params: tuple = ()):  # returns _DBResult
+        if self.driver == 'postgres':
+            sql = sql.replace('?', '%s')
+            cur = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)  # type: ignore
+            cur.execute(sql, params)
+            return _DBResult(self.driver, cur)
+        else:
+            cur = self._conn.execute(sql, params)
+            return _DBResult(self.driver, cur)
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
+
+def _using_postgres() -> bool:
+    return bool(DATABASE_URL) and psycopg2 is not None  # type: ignore
+
+
 def init_user_db() -> None:
-    conn = sqlite3.connect(USER_DB_PATH)
-    try:
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                salt TEXT NOT NULL,
-                created_at TEXT NOT NULL
+    if _using_postgres():
+        conn = psycopg2.connect(DATABASE_URL)  # type: ignore
+        db = DBConnection('postgres', conn)
+        try:
+            db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    username TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    salt TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
             )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS saved_presets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                slot INTEGER NOT NULL CHECK(slot BETWEEN 1 AND 5),
-                name TEXT NOT NULL,
-                payload TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-                UNIQUE(user_id, slot)
+            db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS saved_presets (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    slot INTEGER NOT NULL CHECK (slot BETWEEN 1 AND 5),
+                    name TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(user_id, slot),
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+                """
             )
-            """
-        )
-        conn.commit()
-    finally:
-        conn.close()
+            db.commit()
+        finally:
+            db.close()
+    else:
+        conn = sqlite3.connect(USER_DB_PATH)
+        try:
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    salt TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS saved_presets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    slot INTEGER NOT NULL CHECK(slot BETWEEN 1 AND 5),
+                    name TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    UNIQUE(user_id, slot)
+                )
+                """
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
 def hash_password(password: str) -> Tuple[str, str]:
     salt = os.urandom(16)
@@ -156,8 +234,13 @@ def verify_password(password: str, salt_b64: str, hash_b64: str) -> bool:
     return hmac.compare_digest(expected_hash, test_hash)
 
 def get_user_by_username(username: str):
-    conn = sqlite3.connect(USER_DB_PATH)
-    conn.row_factory = sqlite3.Row
+    if DATABASE_URL and psycopg2 is not None:
+        conn = DBConnection('postgres', psycopg2.connect(DATABASE_URL))  # type: ignore
+    else:
+        raw = sqlite3.connect(USER_DB_PATH)
+        raw.row_factory = sqlite3.Row
+        raw.execute("PRAGMA foreign_keys = ON")
+        conn = DBConnection('sqlite', raw)
     try:
         cursor = conn.execute("SELECT * FROM users WHERE username = ?", (username,))
         return cursor.fetchone()
@@ -166,7 +249,13 @@ def get_user_by_username(username: str):
 
 def create_user(username: str, password: str) -> None:
     salt, password_hash = hash_password(password)
-    conn = sqlite3.connect(USER_DB_PATH)
+    if DATABASE_URL and psycopg2 is not None:
+        conn = DBConnection('postgres', psycopg2.connect(DATABASE_URL))  # type: ignore
+    else:
+        raw = sqlite3.connect(USER_DB_PATH)
+        raw.row_factory = sqlite3.Row
+        raw.execute("PRAGMA foreign_keys = ON")
+        conn = DBConnection('sqlite', raw)
     try:
         conn.execute(
             "INSERT INTO users (username, password_hash, salt, created_at) VALUES (?, ?, ?, ?)",
@@ -176,18 +265,20 @@ def create_user(username: str, password: str) -> None:
     finally:
         conn.close()
 
-def get_db_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(USER_DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+def get_db_connection():
+    if DATABASE_URL and psycopg2 is not None:
+        return DBConnection('postgres', psycopg2.connect(DATABASE_URL))  # type: ignore
+    raw = sqlite3.connect(USER_DB_PATH)
+    raw.row_factory = sqlite3.Row
+    raw.execute("PRAGMA foreign_keys = ON")
+    return DBConnection('sqlite', raw)
 
 def require_user(request: Request) -> str:
     user = request.session.get("user")
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
     return user
-def _get_user_row_or_401(username: str) -> sqlite3.Row:
+def _get_user_row_or_401(username: str):
     user_row = get_user_by_username(username)
     if user_row is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
@@ -342,7 +433,7 @@ async def register(request: Request, username: str = Form(...), password: str = 
 
     try:
         create_user(username, password)
-    except sqlite3.IntegrityError:
+    except Exception:
         context = {"request": request, "error": "Не удалось создать пользователя. Попробуйте другой логин", "username": username}
         return templates.TemplateResponse("register.html", context, status_code=status.HTTP_400_BAD_REQUEST)
 

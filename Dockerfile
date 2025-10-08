@@ -1,18 +1,15 @@
-# Используем официальный образ Python
 FROM python:3.9-slim
 
-# Устанавливаем рабочую директорию
 WORKDIR /app
 
-# Копируем файлы проекта в контейнер
+# Copy project files
 COPY . .
 
-# Устанавливаем зависимости
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+# Install dependencies
+ENV PYTHONUNBUFFERED=1
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
-# Делаем скрипт исполняемым
-RUN chmod +x app.py
-
-# Указываем команду для запуска приложения
-CMD ["python", "app.py"]
+# Run FastAPI with uvicorn
+EXPOSE 8000
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "${PORT:-8000}"]

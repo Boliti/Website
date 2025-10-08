@@ -1669,4 +1669,180 @@ function resetSpectrumHighlight() {
 
 document.addEventListener('DOMContentLoaded', function() {
     initPresetPanel();
-});
+});
+
+// ===== RU localization overrides (safe redefinitions) =====
+// Centralized Russian texts without touching original logic
+const PRESET_EMPTY_NAME = 'Пусто';
+const RU = {
+    AUTH_REQUIRED: 'Требуется авторизация. Пожалуйста, войдите.',
+    AUTH_REQUIRED_PRESETS: 'Требуется авторизация. Войдите, чтобы работать с пресетами.',
+    ENTER_PRESET_NAME: 'Введите название пресета',
+    PRESET_SAVED: 'Пресет сохранён.',
+    PRESET_LOADED: (name) => `Пресет "${name}" загружен.`,
+    PRESET_DELETED: 'Пресет удалён.',
+    PRESET_NOT_FOUND: 'В выбранном слоте пресет не найден.',
+    SAVE_ERROR: 'Не удалось сохранить пресет.',
+    LOAD_ERROR: 'Не удалось загрузить пресет.',
+    DELETE_ERROR: 'Не удалось удалить пресет.',
+    DRAG_HINT: 'Перетащите файлы сюда'
+};
+
+function redirectIfUnauthorized(response, message) {
+    if (response.status === 401) {
+        showAuthBanner(message || RU.AUTH_REQUIRED);
+        return true;
+    }
+    return false;
+}
+
+function lockPresetPanel(message) {
+    presetsLocked = true;
+    updatePresetButtonsDisabled(true);
+    updatePresetsHint(message || RU.AUTH_REQUIRED_PRESETS);
+}
+
+function renderPresetSlots(items) {
+    const slotsById = {};
+    (items || []).forEach((item) => {
+        if (item && typeof item.slot === 'number') {
+            slotsById[item.slot] = item;
+        }
+    });
+    presetState = slotsById;
+    for (let slot = 1; slot <= 5; slot += 1) {
+        const nameEl = document.getElementById(`preset-name-${slot}`);
+        const updatedEl = document.getElementById(`preset-updated-${slot}`);
+        if (!nameEl) continue;
+        const data = slotsById[slot];
+        if (data) {
+            const presetName = data.name || PRESET_EMPTY_NAME;
+            nameEl.textContent = presetName;
+            nameEl.classList.remove('preset-slot-name--empty');
+            if (updatedEl) {
+                updatedEl.textContent = data.updated_at ? new Date(data.updated_at).toLocaleString() : '';
+            }
+        } else {
+            nameEl.textContent = PRESET_EMPTY_NAME;
+            nameEl.classList.add('preset-slot-name--empty');
+            if (updatedEl) {
+                updatedEl.textContent = '';
+            }
+        }
+    }
+}
+
+async function savePreset(slot) {
+    try {
+        const payload = collectPresetPayload();
+        const existing = presetState[slot];
+        const defaultName = existing && existing.name && existing.name !== PRESET_EMPTY_NAME ? existing.name : '';
+        const nameInput = prompt(RU.ENTER_PRESET_NAME, defaultName || '');
+        if (nameInput === null) return;
+        const response = await fetch(`/presets/${slot}`, {
+            credentials: 'include',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: nameInput, payload })
+        });
+        if (redirectIfUnauthorized(response, RU.AUTH_REQUIRED_PRESETS)) {
+            lockPresetPanel(RU.AUTH_REQUIRED_PRESETS);
+            return;
+        }
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || RU.SAVE_ERROR);
+        }
+        updatePresetsHint(RU.PRESET_SAVED);
+        hideAuthBanner();
+        await refreshPresetSlots();
+    } catch (error) {
+        console.error('Save preset error', error);
+        alert(error.message);
+    }
+}
+
+async function loadPreset(slot) {
+    try {
+        const response = await fetch(`/presets/${slot}`, { credentials: 'include' });
+        if (redirectIfUnauthorized(response, RU.AUTH_REQUIRED_PRESETS)) {
+            lockPresetPanel(RU.AUTH_REQUIRED_PRESETS);
+            return;
+        }
+        if (response.status === 404) {
+            alert(RU.PRESET_NOT_FOUND);
+            await refreshPresetSlots();
+            return;
+        }
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || RU.LOAD_ERROR);
+        }
+        const data = await response.json();
+        applyPresetPayload(data.payload || {});
+        updatePresetsHint(RU.PRESET_LOADED(data.name));
+        hideAuthBanner();
+        await processAndPlot();
+    } catch (error) {
+        console.error('Load preset error', error);
+        alert(error.message);
+    }
+}
+
+async function deletePreset(slot) {
+    try {
+        const response = await fetch(`/presets/${slot}`, { credentials: 'include', method: 'DELETE' });
+        if (redirectIfUnauthorized(response, RU.AUTH_REQUIRED_PRESETS)) {
+            lockPresetPanel(RU.AUTH_REQUIRED_PRESETS);
+            return;
+        }
+        if (response.status === 404) {
+            alert(RU.PRESET_NOT_FOUND);
+            await refreshPresetSlots();
+            return;
+        }
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || RU.DELETE_ERROR);
+        }
+        updatePresetsHint(RU.PRESET_DELETED);
+        hideAuthBanner();
+        await refreshPresetSlots();
+    } catch (error) {
+        console.error('Delete preset error', error);
+        alert(error.message);
+    }
+}
+
+function showAIAnalysis(analysisText) {
+    const modal = document.createElement('div');
+    modal.style.position = 'fixed';
+    modal.style.top = '50%';
+    modal.style.left = '50%';
+    modal.style.transform = 'translate(-50%, -50%)';
+    modal.style.backgroundColor = 'white';
+    modal.style.padding = '20px';
+    modal.style.borderRadius = '8px';
+    modal.style.boxShadow = '0 4px 20px rgba(0,0,0,0.2)';
+    modal.style.zIndex = '1000';
+    modal.style.maxWidth = '80%';
+    modal.style.maxHeight = '80%';
+    modal.style.overflow = 'auto';
+    modal.style.color = '#2d3748';
+    modal.innerHTML = `
+        <h2>Анализ AI</h2>
+        <div style="margin: 15px 0; white-space: pre-wrap; max-height: 60vh; overflow-y: auto;">${analysisText}</div>
+        <div style="text-align: center;">
+            <button onclick="this.parentElement.parentElement.remove()" style="padding: 8px 16px; background: #f56565; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                Закрыть
+            </button>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+// Fix drag overlay text if present
+document.addEventListener('DOMContentLoaded', function() {
+    const overlayText = document.querySelector('.drag-overlay-text');
+    if (overlayText) overlayText.textContent = RU.DRAG_HINT;
+});

@@ -272,6 +272,60 @@
 
 <button id="theme-toggle" title="Переключить тему оформления">Тема</button>
 
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  try {
+    document.documentElement.lang = 'ru';
+    document.title = 'Обработка спектров';
+    const fileText = document.querySelector('.file-input-text');
+    if (fileText) fileText.textContent = 'Перетащите файлы сюда или нажмите';
+    const fileCount = document.getElementById('file-count');
+    if (fileCount && !fileCount.textContent.trim()) fileCount.textContent = 'Файлы не выбраны';
+    const logoutBtn = document.querySelector('.logout-btn');
+    if (logoutBtn) logoutBtn.textContent = 'Выйти';
+    const guestText = document.querySelector('.guest-banner__text');
+    if (guestText) guestText.textContent = 'Гостевой режим: войдите или зарегистрируйтесь.';
+    const loginLink = document.querySelector('.guest-banner a[href="/login"]');
+    if (loginLink) loginLink.textContent = 'Войти';
+    const registerLink = document.querySelector('.guest-banner a[href="/register"]');
+    if (registerLink) registerLink.textContent = 'Зарегистрироваться';
+    const uploadTitle = document.querySelector('.control-card .control-title');
+    if (uploadTitle) uploadTitle.textContent = 'Загрузка файлов';
+    const uploadedCard = document.querySelector('.control-card--uploaded .control-title');
+    if (uploadedCard) uploadedCard.textContent = 'Загруженные файлы';
+    const presetsCard = document.querySelector('.presets-card .control-title');
+    if (presetsCard) presetsCard.textContent = 'Пресеты';
+    const presetsHint = document.getElementById('presets-hint');
+    if (presetsHint) presetsHint.textContent = presetsHint.textContent.includes('Войдите') ? 'Войдите, чтобы сохранять пресеты.' : 'Используйте слоты для сохранения и загрузки настроек.';
+    document.querySelectorAll('.preset-slot .preset-slot-label').forEach(function(el){
+      const slot = el.closest('.preset-slot')?.dataset.slot; if (slot) el.textContent = 'Слот ' + slot;
+    });
+    const lblWidth = document.querySelector('label[for="peak_width"]');
+    if (lblWidth) lblWidth.textContent = 'Ширина:';
+    const lblProm = document.querySelector('label[for="peak_prominence"]');
+    if (lblProm) lblProm.textContent = 'Выраженность:';
+    const peakTableLabel = document.querySelector('#show_peak_table')?.closest('label');
+    if (peakTableLabel) peakTableLabel.lastChild.textContent = ' Показать таблицу пиков';
+    const displayTitle = document.querySelector('.parameter-group .parameter-title');
+    if (displayTitle) displayTitle.textContent = 'Отображение';
+    const meanStdLabel = document.querySelector('label[for="show_only_mean_std"]');
+    if (meanStdLabel) meanStdLabel.lastChild.textContent = ' Только среднее/ст. отклонение';
+    const processBtn = document.querySelector('.process-btn');
+    if (processBtn) { processBtn.textContent = 'Обработать данные'; processBtn.title = 'Обработать и построить графики'; }
+    const downloadBtns = document.querySelectorAll('.download-btn');
+    if (downloadBtns[0]) { downloadBtns[0].textContent = 'Скачать средний спектр'; downloadBtns[0].title = 'Скачать усреднённый спектр'; }
+    if (downloadBtns[1]) { downloadBtns[1].textContent = 'Скачать данные'; downloadBtns[1].title = 'Скачать обработанные данные'; }
+    const aiBtn = document.querySelector('.ai-btn');
+    if (aiBtn) { aiBtn.textContent = 'Анализ AI'; aiBtn.title = 'Анализ с помощью AI'; }
+    const clearBtn = document.querySelector('.clear-btn');
+    if (clearBtn) { clearBtn.textContent = 'Очистить график'; clearBtn.title = 'Очистить область графика'; }
+    const themeBtn = document.getElementById('theme-toggle');
+    if (themeBtn) { themeBtn.textContent = 'Тема'; themeBtn.title = 'Переключить тему (светлая/тёмная)'; }
+    const h1 = document.querySelector('h1');
+    if (h1) h1.textContent = 'Обработка спектральных данных';
+  } catch(e) { console.warn('RU text patch failed', e); }
+});
+</script>
 </body>
 </html>
 
